@@ -1,0 +1,24 @@
+GlobalConfig:
+  lang: 'zh'
+ModelConfig:
+  #  dataset: 'all'
+  dataset: 'part'
+  split: 0.2
+  ano: 1
+  EPOCH: 300
+  BATCH_SIZE: 64
+  LEARNING_RATE: 0.001
+  TIME_STEPS: 1
+  FEATURE_SELECT: 0
+  ATTENTION: 'global'
+  SHOW: 0
+  READ: 0
+  DAYS: 14
+
+AEConfig:
+  SHOW_ANOMALY: show
+  REMAKE_EPOCH: 100
+  TIME_STEPS: 1
+  BATCH_SIZE: 128
+  SHOW: 0
+
