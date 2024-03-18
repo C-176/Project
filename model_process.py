@@ -20,6 +20,7 @@ from tensorflow.python.keras.models import load_model
 from tensorflow.python.layers.base import *
 from tensorflow.python.keras import losses
 
+from  GRU_attention import *
 from Metrics import Metrics
 from Plot import Plot
 from loss import *
@@ -198,69 +199,71 @@ class ModelFactory:
     def update_model(self):
         try:
             start = time.time()
-            sql = 'select alum_update_datetime from qjf_model_train where id = %d' % 1
-            result = query(sql)[0][0]
-            # 计算result和today_date的时间差
-            from_date, from_time = str(result).split(' ')[0], str(result).split(' ')[1]
-            hour_differ = hour_differ_cal(from_date, from_time)
             today_date = datetime.now().strftime('%Y-%m-%d')
-            if hour_differ / 24 >= self.CYCLE_PERIOD:
-                from_date, from_time = get_datetime(from_date, from_time, -24 * self.DATA_DAYS)
-                df_data_source = self.get_data_from_sql(from_date)
-                df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}.csv',index=None)
-                if ano:
-                    # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
-                    df_data_source = self.remake(df_data_source, df_data_source)
-                    df_data_source.index = range(len(df_data_source))
-                save_list = fr'{self.project_path}\\models\\{today_date}\\'
-                if not os.path.exists(save_list):
-                    os.makedirs(save_list)
-                for index in range(1, 2):
-                    self.logger.warning(f'{index}------------------------------')
-                    NTU_DATA_LIST = ['syd_yszd_cj', 'syd_hyl_cj', 'syd_ph_cj', 'syd_sw_cj', 'syd_adl_cj', 'syd_rjy_cj',
-                                     'syd_zmd_cj', 'syd_ddl_cj', 'plant_yszd_cj', 'plant_cdcjsll%d_cj' % index,
-                                     'plant_cyytjl_cj', 'syd_jll_cj',
-                                     'plant_jll_cj', 'cdcjfl%d' % index]
-                    NTU_TARGET_LIST = ['cdczd%d' % index]
-                    ALUM_DATA_LIST = ['syd_yszd_cj', 'syd_hyl_cj', 'syd_ph_cj', 'syd_sw_cj', 'syd_adl_cj', 'syd_rjy_cj',
-                                      'syd_zmd_cj', 'syd_ddl_cj', 'plant_yszd_cj', 'plant_cdcjsll%d_cj' % index,
-                                      'plant_cyytjl_cj', 'syd_jll_cj',
-                                      'plant_jll_cj', 'cdczd%d' % index]
-                    ALUM_TARGET_LIST = ['cdcjfl%d' % index]
-                    df_data, df_target = self.data_split(df_data_source, ALUM_DATA_LIST, ALUM_TARGET_LIST)
-                    if FEATURE_SELECT:
-                        # 计算每个特征与目标变量之间的 Spearman 相关系数
-                        corr_list = []
-                        for col in df_data.columns:
-                            corr, _ = spearmanr(df_data[col], df_target)
-                            corr_list.append(corr)
-                        # 选择相关系数较高的特征
-                        selected_features = df_data.columns[abs(pd.Series(corr_list)) > 0.2]
-                        self.logger.info(f"S相关系数特征选取结束，选取特征数：{len(selected_features)}")
-                        self.logger.info(f"选取特征：{selected_features}")
-                        self.logger.info('应用Spearman相关系数特征')
-                        df_data = df_data[selected_features]
-                    # self.logger.info(df_data.head(1))
-                    self.logger.info(ALUM_TARGET_LIST[0])
-                    alum_model = self.lstm_train(df_data, df_target)
-                    self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum.pkl')
+            # sql = 'select alum_update_datetime from qjf_model_train where id = %d' % 1
+            # result = query(sql)[0][0]
+            # # 计算result和today_date的时间差
+            # from_date, from_time = str(result).split(' ')[0], str(result).split(' ')[1]
+            # hour_differ = hour_differ_cal(from_date, from_time)
+            # if hour_differ / 24 < self.CYCLE_PERIOD:
+            #     return
+            # from_date, from_time = get_datetime(from_date, from_time, -24 * self.DATA_DAYS)
+            # df_data_source = self.get_data_from_sql(from_date)
+            # df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}.csv', index=None)
+            df_data_source = pd.read_csv(fr'{self.project_path}\\data\\数据驱动\\data_1710677626.csv')
+            if ano:
+                # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
+                df_data_source = self.remake(df_data_source, df_data_source)
+                df_data_source.index = range(len(df_data_source))
+            save_list = fr'{self.project_path}\\models\\{today_date}\\'
+            if not os.path.exists(save_list):
+                os.makedirs(save_list)
+            for index in range(1, 2):
+                self.logger.warning(f'{index}------------------------------')
+                NTU_DATA_LIST = ['syd_yszd_cj', 'syd_hyl_cj', 'syd_ph_cj', 'syd_sw_cj', 'syd_adl_cj', 'syd_rjy_cj',
+                                 'syd_zmd_cj', 'syd_ddl_cj', 'plant_yszd_cj', 'plant_cdcjsll%d_cj' % index,
+                                 'plant_cyytjl_cj', 'syd_jll_cj',
+                                 'plant_jll_cj', 'cdcjfl%d' % index]
+                NTU_TARGET_LIST = ['cdczd%d' % index]
+                ALUM_DATA_LIST = ['syd_yszd_cj', 'syd_hyl_cj', 'syd_ph_cj', 'syd_sw_cj', 'syd_adl_cj', 'syd_rjy_cj',
+                                  'syd_zmd_cj', 'syd_ddl_cj', 'plant_yszd_cj', 'plant_cdcjsll%d_cj' % index,
+                                  'plant_cyytjl_cj', 'syd_jll_cj',
+                                  'plant_jll_cj', 'cdczd%d' % index]
+                ALUM_TARGET_LIST = ['cdcjfl%d' % index]
+                df_data, df_target = self.data_split(df_data_source, ALUM_DATA_LIST, ALUM_TARGET_LIST)
+                if FEATURE_SELECT:
+                    # 计算每个特征与目标变量之间的 Spearman 相关系数
+                    corr_list = []
+                    for col in df_data.columns:
+                        corr, _ = spearmanr(df_data[col], df_target)
+                        corr_list.append(corr)
+                    # 选择相关系数较高的特征
+                    selected_features = df_data.columns[abs(pd.Series(corr_list)) > 0.2]
+                    self.logger.info(f"S相关系数特征选取结束，选取特征数：{len(selected_features)}")
+                    self.logger.info(f"选取特征：{selected_features}")
+                    self.logger.info('应用Spearman相关系数特征')
+                    df_data = df_data[selected_features]
+                # self.logger.info(df_data.head(1))
+                self.logger.info(ALUM_TARGET_LIST[0])
+                alum_model = self.lstm_train(df_data, df_target)
+                self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum.pkl')
 
-                    df_data, df_target = self.data_split(df_data_source, NTU_DATA_LIST, NTU_TARGET_LIST)
+                df_data, df_target = self.data_split(df_data_source, NTU_DATA_LIST, NTU_TARGET_LIST)
 
-                    self.logger.info(NTU_TARGET_LIST[0])
-                    ntu_model = self.lstm_train(df_data, df_target)
-                    self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-ntu.pkl')
+                self.logger.info(NTU_TARGET_LIST[0])
+                ntu_model = self.lstm_train(df_data, df_target)
+                self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-ntu.pkl')
 
-                    # 保存模型
-                    ntu_model.save(save_list + fr'Pool{index}_NTU_predict.model')
-                    alum_model.save(save_list + fr'Pool{index}_ALUM_predict.model')
+                # 保存模型
+                ntu_model.save(save_list + fr'Pool{index}_NTU_predict.model')
+                alum_model.save(save_list + fr'Pool{index}_ALUM_predict.model')
 
-                    # sql = 'update qjf_model_train set ntu_update_datetime = now(),alum_update_datetime=now(),ntu_model_name="%s",alum_model_name="%s" where id = %d' % (
-                    #     save_list, save_list, index)
-                    # query(sql)
-                    self.logger.warning(f'{index}#预测模型已训练完毕并保存')
-                end = time.time()
-                self.logger.info('总耗时: %f 分钟' % ((end - start) / 60))
+                # sql = 'update qjf_model_train set ntu_update_datetime = now(),alum_update_datetime=now(),ntu_model_name="%s",alum_model_name="%s" where id = %d' % (
+                #     save_list, save_list, index)
+                # query(sql)
+                self.logger.warning(f'{index}#预测模型已训练完毕并保存')
+            end = time.time()
+            self.logger.info('总耗时: %f 分钟' % ((end - start) / 60))
 
         except Exception:
             self.logger.error(traceback.format_exc())
@@ -690,6 +693,9 @@ class ModelFactory:
 
         input_size, output_size = trainX.shape[1], trainY.shape[1]
         model = gru_with_local_attention(learning_rate=LEARNING_RATE)
+        # model = GRUWithLocalAttention(input_shape=(TIME_STEPS, input_size))
+        # model.compile(loss=tilde_q_loss)
+        # model.summary()
 
         def scheduler(epoch):
             # 每隔100个epoch，学习率减小为原来的0.9

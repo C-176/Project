@@ -388,7 +388,7 @@ class Plot:
         plt.xticks(fontsize=20)
         plt.yticks(fontsize=20)
         data1, data2 = np.array(data1), np.array(data2)
-        plt.ylim((np.min(data2) * 0.7 if np.min(data2) > 0 else np.min(data2) * 1.3, np.max(data2) * 1.3))
+        # plt.ylim((np.min(data2) * 0.7 if np.min(data2) > 0 else np.min(data2) * 1.3, np.max(data2) * 1.3))
 
         plt.xlabel('Sample' if lang == 'en' else '样本', fontsize=20,
                    fontproperties='Times New Roman' if lang == 'en' else 'SimSun')
@@ -402,8 +402,8 @@ class Plot:
             xy_s2 = (range(len(data1)), data1)
 
         plt.plot(xy_s1[0], xy_s1[1], '#440357', label=label2)
-        # plt.plot(xy_s2[0], xy_s2[1], '#36b77b', label=label1)
-        plt.scatter(xy_s2[0] if sub_ax is None else sub_ax, xy_s2[1], color='#36b77b', label=label1, s=8)
+        plt.plot(xy_s2[0], xy_s2[1], '#36b77b', label=label1)
+        # plt.scatter(xy_s2[0] if sub_ax is None else sub_ax, xy_s2[1], color='#36b77b', label=label1, s=8)
 
         plt.legend(loc='upper right', facecolor='#fff',
                    prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 20})
