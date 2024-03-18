@@ -2,5 +2,5 @@
 /.git/
 /.idea/
 /models/
-/pics/
-!pics/保存/
+/pics/*
+!/pics/保存/
