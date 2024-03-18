@@ -4,16 +4,16 @@ ModelConfig:
   #  dataset: 'all'
   dataset: 'part'
   split: 0.2
-  ano: 1
+  ano: 0
   EPOCH: 300
   BATCH_SIZE: 64
   LEARNING_RATE: 0.001
   TIME_STEPS: 1
   FEATURE_SELECT: 0
   ATTENTION: 'global'
-  SHOW: 0
+  SHOW: 1
   READ: 0
-  DAYS: 14
+  DAYS: 360
 
 AEConfig:
   SHOW_ANOMALY: show

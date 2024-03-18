@@ -8,7 +8,7 @@ import numpy
 import numpy as np
 from matplotlib import pyplot as plt
 
-from alum.public_util import *
+from public_util import *
 import traceback
 import snap7
 

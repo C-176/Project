@@ -7,14 +7,12 @@ import pandas as pd
 
 from Metrics import Metrics
 from public_util import *
-from 大论文.Plot import Plot
+from Plot import Plot
 
 
 class Project:
     csv_index_list = ['1号矾投加量', '1号沉淀池出水浊度']
     sql_index_list = ['cdcjfl1', 'cdczd1']
-    # csv_index_list = ['cdcjfl1', 'cdczd1']
-    csv_data_dict = {}
     index_dict = {0: '矾', 1: '出水浊度'}
 
     month_dict = {
@@ -44,10 +42,10 @@ class Project:
         logger = logging.getLogger("logger")
         # 设置日志等级
         logger.setLevel(logging.DEBUG)
-        file_path = os.getcwd() + "/log/project.log"
-        if not os.path.exists(os.getcwd() + "/log"):
-            print("创建文件夹" + os.getcwd() + "/log")
-            os.makedirs(os.getcwd() + "/log")
+        file_path = os.getcwd() + "/log/project/project.log"
+        if not os.path.exists(os.getcwd() + "/log/project"):
+            print("创建文件夹" + os.getcwd() + "/log/project")
+            os.makedirs(os.getcwd() + "/log/project")
         # 写入文件的日志信息格式
         # 当前时间 - 文件名含后缀（不含 modules) - line:行数 -[调用方函数名] -日志级别名称 -日志内容 -进程id
         formatter = logging.Formatter(
@@ -129,14 +127,13 @@ class Project:
                       'cv_ntu_after': cv_list2[12:],
                       'error_before': error_list1, 'error_after': error_list2}).to_csv(
             'data/知识驱动/data.csv', index=False)
-        # paint_double('矾量', cv_list1, '之前', cv_list2, '之后', lang='zh')
-        self.plot.double_lable_paint_test(
+        self.plot.paint_for_knowledge_driven(
             {'变异系数': [{'未应用专家系统（出水浊度）': cv_list1[:12], '应用专家系统（出水浊度）': cv_list2[:12]},
                           {'未应用专家系统（矾量）': cv_list1[12:], '应用专家系统（矾量）': cv_list2[12:]}],
              '超标数据量': [{'未应用专家系统': error_list1, '应用专家系统': error_list2}],
              '平均值': [{'未应用专家系统（出水浊度）': mean_list1[:12], '应用专家系统（出水浊度）': mean_list2[:12]},
                         {'未应用专家系统（矾量）': mean_list1[12:], '应用专家系统（矾量）': mean_list2[12:]}]
-             }, lang='zh', title='基于知识驱动的专家系统应用前后效果对比'
+             }, lang='zh'
         )
 
 

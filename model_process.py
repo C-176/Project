@@ -2,9 +2,9 @@ import logging
 import pickle
 import random
 import shutil
+from itertools import accumulate
 from logging.handlers import TimedRotatingFileHandler
 
-import joblib
 import ruamel
 from ruamel import yaml
 from scipy.interpolate import make_interp_spline
@@ -20,9 +20,12 @@ from tensorflow.python.keras.models import load_model
 from tensorflow.python.layers.base import *
 from tensorflow.python.keras import losses
 
+from Metrics import Metrics
+from Plot import Plot
 from loss import *
 from utils import *
 from callback import *
+from public_util import *
 
 import copy
 import traceback
@@ -116,120 +119,6 @@ def inverse_transform(scaler, front_data, after_data, col_index, TIME_STEPS=1):
     return after_data[TIME_STEPS - 1:]
 
 
-def calculate_mape(y_true, y_pred):
-    """
-    计算MAPE（Mean Absolute Percentage Error）
-    :param y_true: 真实值
-    :param y_pred: 预测值
-    :return: MAPE
-    """
-    y_true, y_pred = np.array(y_true), np.array(y_pred)
-    return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
-
-
-def calculate_rmse(y_true, y_pred):
-    """
-    计算RMSE（Root Mean Squared Error）
-    :param y_true: 真实值
-    :param y_pred: 预测值
-    :return: RMSE
-    """
-    y_true, y_pred = np.array(y_true), np.array(y_pred)
-    return np.sqrt(np.mean((y_true - y_pred) ** 2))
-
-
-def paint_error(data, data1, column: list, legend_str, pause=False, pause_time=3, to_save=False, smooth=False,
-                lang='en',
-                title=None):
-    fig, ax = plt.subplots(1, 1)
-    fig.set_size_inches(9, 6)
-    fig.set_dpi(100)
-
-    # 共享x轴，生成次坐标轴
-    ax_sub = ax.twinx()
-    # 设置主次y轴的title
-    ax.set_ylabel(column[0], fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
-    ax_sub.set_ylabel(column[1], fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
-    # 设置x轴title
-    ax.set_xlabel('Sample' if lang == 'en' else '样本', fontsize=20,
-                  fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
-    # 设置图片title
-    # ax.set_title('Effluent turbidity residuals', fontsize=20)
-    ax.set_title(title, fontsize=20)
-    data = np.array(data)
-    data1 = np.array(data1)
-    ax.set_ylim(np.min(data) * 0.5 if np.min(data) > 0 else np.min(data) * 1.5, np.max(data) * 1.7)
-    ax_sub.set_ylim(np.min(data1) * 0.5 if np.min(data1) > 0 else np.min(data1) * 1.5, np.max(data1) * 1.7)
-    ax.tick_params(axis='x', labelsize=20, pad=5)
-    ax.tick_params(axis='y', labelsize=20, pad=5)
-    ax_sub.tick_params(axis='y', labelsize=20, pad=5)
-
-    plt.grid(linestyle="--", linewidth=1)
-    if smooth:
-        xy_s = smooth_xy(range(len(data)), data)
-        xy_s1 = smooth_xy(range(len(data1)), data1)
-    else:
-        xy_s = (range(len(data)), data)
-        xy_s1 = (range(len(data)), data1)
-
-    # 绘图
-    # l1, = ax.plot(xy_s[0], xy_s[1], '#440357', label=f'{legend_str}', marker='o', markersize=5, markerfacecolor='white')
-    # 设置图例的背景色为白色
-
-    l1, = ax.plot(xy_s[0], xy_s[1], '#36b77b', label=f'{legend_str}', marker='o', markersize=5, markerfacecolor='white')
-    l2, = ax_sub.plot(xy_s1[0], xy_s1[1], '#440357', label=f'{legend_str}', marker='*', markersize=8,
-                      markerfacecolor='white')
-    # 放置图例
-
-    plt.legend(handles=[l1], loc='upper right',
-               prop={'family': 'SimSun' if lang == 'zh' else 'Times New Roman', 'size': 20}, facecolor='white')
-
-    if to_save:
-        plt.savefig(fr'{column[0]}.png', bbox_inches='tight')
-
-
-def smooth_xy(lx, ly):
-    """数据平滑处理
-
-    :param lx: x轴数据，数组
-    :param ly: y轴数据，数组
-    :return: 平滑后的x、y轴数据，数组 [slx, sly]
-    """
-    x = np.array(lx)
-    y = np.array(ly)
-    x_smooth = np.linspace(x.min(), x.max(), 600)
-    y_smooth = make_interp_spline(x, y)(x_smooth)
-    return [x_smooth, y_smooth]
-
-
-def show_loss(history, pause=False):
-    lang = 'zh'
-    plt.figure(figsize=(8, 6), dpi=100)  # 设置画布大小，像素
-    plt.xticks(fontsize=20)
-    plt.yticks(fontsize=20)
-    data1 = history.history['loss']
-    data2 = history.history['val_loss']
-    label1 = '训练集'
-    label2 = '验证集'
-    data1, data2 = np.array(data1), np.array(data2)
-    # plt.ylim((np.min(data1) * 0.5 if np.min(data1) > 0 else np.min(data1) * 1.5, np.max(data1) * 1.5))
-    plt.ylim((0, 0.03))
-    plt.xlabel('Sample' if lang == 'en' else '迭代次数', fontsize=20,
-               fontproperties='Times New Roman' if lang == 'en' else 'SimSun')
-    plt.ylabel('损失（MSE）', fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
-
-    xy_s1 = (range(len(data2)), data2)
-    xy_s2 = (range(len(data1)), data1)
-    plt.plot(xy_s1[0], xy_s1[1], '#440357', label=label2)
-    plt.scatter(xy_s2[0], xy_s2[1], color='#36b77b', label=label1, s=14)
-
-    plt.legend(loc='upper right', facecolor='#fff',
-               prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 20})
-
-    # plt.savefig(f'图/loss.png', bbox_inches='tight')
-    plt.pause(3)
-    plt.close()
-
 
 def MD_threshold(true, pred, test_data=True):
     diff = pred - true
@@ -259,57 +148,24 @@ def MD_threshold(true, pred, test_data=True):
     return threshold
 
 
-# 双 线图
-def paint_double(column, data1, label1, data2, label2, to_save=False, show=True, smooth=False, lang='en', sub_ax=None):
-    plt.figure(figsize=(19, 10), dpi=100)  # 设置画布大小，像素
-    plt.xticks(fontsize=20)
-    plt.yticks(fontsize=20)
-    data1, data2 = np.array(data1), np.array(data2)
-    plt.ylim((np.min(data2) * 0.7 if np.min(data2) > 0 else np.min(data2) * 1.3, np.max(data2) * 1.3))
-
-    plt.xlabel('Sample' if lang == 'en' else '样本', fontsize=20,
-               fontproperties='Times New Roman' if lang == 'en' else 'SimSun')
-    plt.ylabel(column, fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
-
-    if smooth:
-        xy_s1 = smooth_xy(range(len(data2)), data2)
-        xy_s2 = smooth_xy(range(len(data1)), data1)
-    else:
-        xy_s1 = (range(len(data2)), data2)
-        xy_s2 = (range(len(data1)), data1)
-
-    plt.plot(xy_s1[0], xy_s1[1], '#440357', label=label2)
-    # plt.plot(xy_s2[0], xy_s2[1], '#36b77b', label=label1)
-    plt.scatter(xy_s2[0] if sub_ax is None else sub_ax, xy_s2[1], color='#36b77b', label=label1, s=8)
-
-    plt.legend(loc='upper right', facecolor='#fff',
-               prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 20})
-
-    if to_save:
-        plt.savefig(f'{to_save}', format='svg', bbox_inches='tight')
-    if show:
-        plt.show()
-    plt.close()
-
-    # pass
-
-
 class ModelFactory:
     def __init__(self, cycle_period=7, data_days=0):
+        self.project_path = 'C:\\Users\\Ryker\\OneDrive\\桌面\\课题代码\\大论文'
         self.DATA_DAYS = data_days
         self.CYCLE_PERIOD = cycle_period
         self.init_logger()
+        self.metrics = Metrics()
 
     def init_logger(self):
         # 创建logger对象
         # print("正在加载日志工具")
-        logger = logging.getLogger("alum.before_model.logger")
+        logger = logging.getLogger("model.logger")
         # 设置日志等级
         logger.setLevel(logging.INFO)
-        file_path = os.getcwd() + "/log/alum/before_model/model.log"
-        if not os.path.exists(os.getcwd() + "/log/alum/before_model/"):
-            print("创建文件夹" + os.getcwd() + "/log/alum/before_model/")
-            os.makedirs(os.getcwd() + "/log/alum/before_model/")
+        file_path = os.getcwd() + "/log/model/model.log"
+        if not os.path.exists(os.getcwd() + "/log/model/"):
+            print("创建文件夹" + os.getcwd() + "/log/model/")
+            os.makedirs(os.getcwd() + "/log/model/")
         # 写入文件的日志信息格式
         # 当前时间 - 文件名含后缀（不含 modules) - line:行数 -[调用方函数名] -日志级别名称 -日志内容 -进程id
         formatter = logging.Formatter(
@@ -334,8 +190,8 @@ class ModelFactory:
         for i in X_train.columns:
             list1 = scored[scored[str(i) + '_Anomaly'] == True].index
             if detect_show:
-                paint_double(i, [X_train[i][j] for j in list1], '异常数据', X_train[i],
-                             '原始数据', to_save=fr'D:\BywJiaYao\白洋湾重构\alum\before\图\{i}.svg', lang='zh',
+                Plot.paint_double(i, [X_train[i][j] for j in list1], '异常数据', X_train[i],
+                             '原始数据', to_save=fr'{self.project_path}\pics\数据驱动\异常数据_{i}_{int(time.time())}.png', lang='zh',
                              sub_ax=[i - TIME_STEPS + 1 for i in list1],
                              show=detect_show)
 
@@ -351,10 +207,15 @@ class ModelFactory:
             if hour_differ / 24 >= self.CYCLE_PERIOD:
                 from_date, from_time = get_datetime(from_date, from_time, -24 * self.DATA_DAYS)
                 df_data_source = self.get_data_from_sql(from_date)
-                save_list = fr'D:\\BywJiaYao\\白洋湾重构\\models\\{today_date}\\'
+                df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}.csv',index=None)
+                if ano:
+                    # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
+                    df_data_source = self.remake(df_data_source, df_data_source)
+                    df_data_source.index = range(len(df_data_source))
+                save_list = fr'{self.project_path}\\models\\{today_date}\\'
                 if not os.path.exists(save_list):
                     os.makedirs(save_list)
-                for index in range(1, 5):
+                for index in range(1, 2):
                     self.logger.warning(f'{index}------------------------------')
                     NTU_DATA_LIST = ['syd_yszd_cj', 'syd_hyl_cj', 'syd_ph_cj', 'syd_sw_cj', 'syd_adl_cj', 'syd_rjy_cj',
                                      'syd_zmd_cj', 'syd_ddl_cj', 'plant_yszd_cj', 'plant_cdcjsll%d_cj' % index,
@@ -394,9 +255,9 @@ class ModelFactory:
                     ntu_model.save(save_list + fr'Pool{index}_NTU_predict.model')
                     alum_model.save(save_list + fr'Pool{index}_ALUM_predict.model')
 
-                    sql = 'update qjf_model_train set ntu_update_datetime = now(),alum_update_datetime=now(),ntu_model_name="%s",alum_model_name="%s" where id = %d' % (
-                        save_list, save_list, index)
-                    query(sql)
+                    # sql = 'update qjf_model_train set ntu_update_datetime = now(),alum_update_datetime=now(),ntu_model_name="%s",alum_model_name="%s" where id = %d' % (
+                    #     save_list, save_list, index)
+                    # query(sql)
                     self.logger.warning(f'{index}#预测模型已训练完毕并保存')
                 end = time.time()
                 self.logger.info('总耗时: %f 分钟' % ((end - start) / 60))
@@ -434,7 +295,7 @@ class ModelFactory:
         self.logger.info("获取数据开始")
 
         # 用DBAPI构建数据库链接engine
-        engine = pymysql.connect(host='198.186.202.53', user='root', password='950609', database='rglr', charset='utf8',
+        engine = pymysql.connect(host='localhost', user='root', password='chenle123', database='rglr', charset='utf8',
                                  # engine = pymysql.connect(host='localhost', user='root', password='chenle123', database='rglr', charset='utf8',
                                  use_unicode=True)
 
@@ -448,12 +309,7 @@ class ModelFactory:
             'plant_cdcjsll4_cj']
         df['pass_dis'] = df['jsll'].apply(lambda x: x / 60 / 3.078)
         dis_data = np.array(df['pass_dis'])
-        dis_total = 0
-
-        for i in range(len(dis_data)):
-            dis_total += dis_data[i]
-            dis_data[i] = dis_total
-
+        dis_data = np.array(list(accumulate(dis_data)))
         for i in range(len(df)):
             df.loc[i, 'next_date'] = self.get_next_time(i, df, dis_data)
         df = df.loc[df['next_date'] != '-1']
@@ -506,10 +362,7 @@ class ModelFactory:
         self.logger.info("获取数据完成")
         remove_list = ['id', 'Date_S', 'Time_S', 'jsll', 'next_date', 'pass_dis', 'seconds', 'secondsx']
         forward_data.drop(remove_list, axis=1, inplace=True)
-        if ano:
-            # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
-            forward_data = self.remake(forward_data, forward_data)
-            forward_data.index = range(len(forward_data))
+
 
         # 将数据进行滤波
         # forward_data = filter_df(forward_data, 10)
@@ -654,7 +507,7 @@ class ModelFactory:
         # 设置随机种子
         tf.random.set_seed(2022)
         dataset = pd.concat([data, target], axis=1)
-        test_size = 100
+        test_size = 0.2
 
         self.scaler = MinMaxScaler()  # 归一化模板
         self.scaler = self.scaler.fit(dataset)
@@ -855,7 +708,7 @@ class ModelFactory:
                             shuffle=True, workers=8, use_multiprocessing=True,
                             callbacks=[reduce_lr_auto, ProgressBar(self.logger)])
 
-        # show_loss(history, True)
+        # Plot.show_loss(history, True)
 
         # 计算每个特征的重要性
         n_features = train_X.shape[2]
@@ -898,25 +751,25 @@ class ModelFactory:
                                                                                               val_result), metrics.r2_score(
             y_test, test_result)
         # 计算测试集的RMSE和MAPE
-        train_RMSE, val_RMSE, test_RMSE = calculate_rmse(y_train, train_result), calculate_rmse(y_val,
-                                                                                                val_result), calculate_rmse(
+        train_RMSE, val_RMSE, test_RMSE = self.metrics.rmse(y_train, train_result), self.metrics.rmse(y_val,
+                                                                                                val_result), self.metrics.rmse(
             y_test, test_result)
-        train_MAPE, val_MAPE, test_MAPE = calculate_mape(y_train, train_result), calculate_mape(y_val,
-                                                                                                val_result), calculate_mape(
+        train_MAPE, val_MAPE, test_MAPE = self.metrics.mape(y_train, train_result), self.metrics.mape(y_val,
+                                                                                                val_result), self.metrics.mape(
             y_test, test_result)
         column += unit
         if train_show:
-            paint_double(column, train_result,
+            Plot.paint_double(column, train_result,
                          f'预测值',
-                         y_train, '实测值', fr'D:\BywJiaYao\白洋湾重构\alum\before\图\gru_train.svg', smooth=False,
+                         y_train, '实测值', fr'{self.project_path}\pics\数据驱动\GRU_TRAIN_{int(time.time())}.png', smooth=False,
                          lang=lang, show=train_show)
-            paint_double(column, val_result,
+            Plot.paint_double(column, val_result,
                          f'预测值', y_val,
-                         "实测值", fr'D:\BywJiaYao\白洋湾重构\alum\before\图\gru_val.svg', smooth=False, lang=lang,
+                         "实测值", fr'{self.project_path}\pics\数据驱动\GRU_VAL_{int(time.time())}.png', smooth=False, lang=lang,
                          show=train_show)
-            paint_double(column, test_result,
+            Plot.paint_double(column, test_result,
                          f'预测值', y_test,
-                         "实测值", fr'D:\BywJiaYao\白洋湾重构\alum\before\图\gru_test.svg', smooth=False, lang=lang,
+                         "实测值", fr'{self.project_path}\pics\数据驱动\GRU_TEST_{int(time.time())}.png', smooth=False, lang=lang,
                          show=train_show)
         self.log_write(
             f'[模型开发] Hidden_size:{Hidden_size} EPOCH:{EPOCH} Batch_size:{BATCH_SIZE} center_size:{center_size} Time_steps:{TIME_STEPS} ')
@@ -975,7 +828,7 @@ class ModelFactory:
         # 把测试集也训练一下然后保存模型
         self.logger.info("测试集训练开始")
         # RF.fit(x_test, y_test)
-        # paint_double('RF', y_test, 'true', RF_result, 'predict')
+        # Plot.paint_double('RF', y_test, 'true', RF_result, 'predict')
         # 计算均方方差和R2
         MSE = metrics.mean_squared_error(y_test, RF_result)
         R2 = metrics.r2_score(y_test, RF_result)
@@ -983,7 +836,7 @@ class ModelFactory:
         # 验证
         # RF.fit(x_val, y_val)
         RF_result = RF.predict(x_val)
-        # paint_double('RF', y_val, 'true', RF_result, 'predict')
+        # Plot.paint_double('RF', y_val, 'true', RF_result, 'predict')
         # 计算均方方差和R2
         MSE = metrics.mean_squared_error(y_val, RF_result)
         R2 = metrics.r2_score(y_val, RF_result)
@@ -1073,7 +926,7 @@ class ModelFactory:
                             shuffle=True, workers=-1, use_multiprocessing=True,
                             callbacks=[ProgressBar(self.logger)])
 
-        # show_loss(history, True)
+        # Plot.show_loss(history, True)
         test_result = model.predict(test_X)
         train_result = model.predict(train_X)
         output_size = len(X_train.columns)
@@ -1195,7 +1048,7 @@ NEXT_DATE = "next_Date"
 NEXT_TIME = "next_Time"
 TIMESTAMP = "seconds"
 
-yaml_path = r'D:\BywJiaYao\白洋湾重构\alum\before\config.yaml'
+yaml_path = r'config.yaml'
 
 with open(yaml_path, 'r', encoding='utf-8') as f:
     config = yaml.load(f, Loader=ruamel.yaml.Loader)

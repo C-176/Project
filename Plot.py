@@ -7,6 +7,7 @@ import pandas as pd
 from matplotlib.font_manager import FontProperties
 from matplotlib.legend_handler import HandlerPatch
 import matplotlib.patches as mpatches
+from scipy.interpolate import make_interp_spline
 
 # 坐标轴的刻度设置向内(in)或向外(out)
 plt.rcParams['xtick.direction'] = 'in'
@@ -32,9 +33,7 @@ marker_list = ['.', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', '8', 's', 'p', 
 RADIS = 1.1
 
 tylor_color_list = ['#481b6d', '#3f4788', '#2e6e8e', '#21918c', '#2db27d', '#73d056', '#d0e11c']
-ENN = pd.read_excel('ENN09-21-10-11-59.xlsx', sheet_name='Sheet1')
-RF = pd.read_excel('RF09-21-10-11-24.xlsx', sheet_name='Sheet1')
-print(ENN)
+
 Simsun = FontProperties(fname=r"C:\Windows\Fonts\simsunb.ttf")
 Times = FontProperties(fname=r"C:\Windows\Fonts\times.ttf")
 mpl.rcParams['axes.unicode_minus'] = False
@@ -43,7 +42,7 @@ mpl.rcParams['axes.unicode_minus'] = False
 class Plot:
 
     @staticmethod
-    def double_lable_paint_test(dicts, lang='en', title=None, sub_col=None):
+    def paint_for_knowledge_driven(dicts, lang='en', title=None, sub_col=None):
         fig = plt.figure(figsize=(12, 9), dpi=100)  # 设置画布大小，像素
         fig.subplots_adjust(top=0.85)
         # ax1显示y1  ,ax2显示y2
@@ -62,8 +61,9 @@ class Plot:
         for index, (key, value) in enumerate(dicts['变异系数'][1].items()):
             ax12.plot(range(1, len(value) + 1), value, color_list[2:][index] + '-.', marker=line_style[:][index],
                       label=key)
-        plt.title(title, fontdict={'fontsize': 20, 'fontweight': 'bold',
-                                   'fontfamily': 'SimSun' if lang == 'zh' else 'Times New Roman'})
+        if title:
+            plt.title(title, fontdict={'fontsize': 20, 'fontweight': 'bold',
+                                       'fontfamily': 'SimSun' if lang == 'zh' else 'Times New Roman'})
 
         ax11.set_ylabel('变异系数（%）', fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
         if sub_col:
@@ -140,8 +140,10 @@ class Plot:
         #            prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 16})
         plt.savefig('pics/知识驱动/' + str(int(time.time())) + '.png', dpi=300, bbox_inches='')
         plt.show()
-
+    @staticmethod
     def taylor(r_small, r_big, r_interval, ref_std, ENN, RF, small, big):
+        ENN = pd.read_excel('ENN09-21-10-11-59.xlsx', sheet_name='Sheet1')
+        RF = pd.read_excel('RF09-21-10-11-24.xlsx', sheet_name='Sheet1')
         fig = plt.figure(figsize=(8, 6), dpi=140)
         axe = plt.subplot(1, 1, 1, projection='polar')
         axe.set_title('Taylor Diagram of Effluent Turbidity Prediction Models', fontproperties=Times, fontsize=18,
@@ -287,6 +289,132 @@ class Plot:
         # cb = plt.colorbar(contourplot, pad=0.1, extend='both', shrink=0.8)
         # cb.set_label('RMSE (mg/L)')
         plt.show()
+    @staticmethod
+    def paint_error(data, data1, column: list, legend_str, pause=False, pause_time=3, to_save=False, smooth=False,
+                    lang='en',
+                    title=None):
+        fig, ax = plt.subplots(1, 1)
+
+        fig.set_size_inches(9, 6)
+        fig.set_dpi(100)
+
+        # 共享x轴，生成次坐标轴
+        ax_sub = ax.twinx()
+        # 设置主次y轴的title
+        ax.set_ylabel(column[0], fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        ax_sub.set_ylabel(column[1], fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        # 设置x轴title
+        ax.set_xlabel('Sample' if lang == 'en' else '样本', fontsize=20,
+                      fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        # 设置图片title
+        # ax.set_title('Effluent turbidity residuals', fontsize=20)
+        ax.set_title(title, fontsize=20)
+        data = np.array(data)
+        data1 = np.array(data1)
+        ax.set_ylim(np.min(data) * 0.5 if np.min(data) > 0 else np.min(data) * 1.5, np.max(data) * 1.7)
+        ax_sub.set_ylim(np.min(data1) * 0.5 if np.min(data1) > 0 else np.min(data1) * 1.5, np.max(data1) * 1.7)
+        ax.tick_params(axis='x', labelsize=20, pad=5)
+        ax.tick_params(axis='y', labelsize=20, pad=5)
+        ax_sub.tick_params(axis='y', labelsize=20, pad=5)
+
+        plt.grid(linestyle="--", linewidth=1)
+        if smooth:
+            xy_s = Plot.smooth_xy(range(len(data)), data)
+            xy_s1 = Plot.smooth_xy(range(len(data1)), data1)
+        else:
+            xy_s = (range(len(data)), data)
+            xy_s1 = (range(len(data)), data1)
+
+        # 绘图
+        # l1, = ax.plot(xy_s[0], xy_s[1], '#440357', label=f'{legend_str}', marker='o', markersize=5, markerfacecolor='white')
+        # 设置图例的背景色为白色
+
+        l1, = ax.plot(xy_s[0], xy_s[1], '#36b77b', label=f'{legend_str}', marker='o', markersize=5, markerfacecolor='white')
+        l2, = ax_sub.plot(xy_s1[0], xy_s1[1], '#440357', label=f'{legend_str}', marker='*', markersize=8,
+                          markerfacecolor='white')
+        # 放置图例
+
+        plt.legend(handles=[l1], loc='upper right',
+                   prop={'family': 'SimSun' if lang == 'zh' else 'Times New Roman', 'size': 20}, facecolor='white')
+
+        if to_save:
+            plt.savefig(fr'{column[0]}.png', bbox_inches='tight')
+    @staticmethod
+    def smooth_xy(lx, ly):
+        """数据平滑处理
+
+        :param lx: x轴数据，数组
+        :param ly: y轴数据，数组
+        :return: 平滑后的x、y轴数据，数组 [slx, sly]
+        """
+        x = np.array(lx)
+        y = np.array(ly)
+        x_smooth = np.linspace(x.min(), x.max(), 600)
+        y_smooth = make_interp_spline(x, y)(x_smooth)
+        return [x_smooth, y_smooth]
+    @staticmethod
+    def show_loss(history, pause=False):
+        lang = 'zh'
+        plt.figure(figsize=(8, 6), dpi=100)  # 设置画布大小，像素
+        plt.xticks(fontsize=20)
+        plt.yticks(fontsize=20)
+        data1 = history.history['loss']
+        data2 = history.history['val_loss']
+        label1 = '训练集'
+        label2 = '验证集'
+        data1, data2 = np.array(data1), np.array(data2)
+        # plt.ylim((np.min(data1) * 0.5 if np.min(data1) > 0 else np.min(data1) * 1.5, np.max(data1) * 1.5))
+        plt.ylim((0, 0.03))
+        plt.xlabel('Sample' if lang == 'en' else '迭代次数', fontsize=20,
+                   fontproperties='Times New Roman' if lang == 'en' else 'SimSun')
+        plt.ylabel('损失（MSE）', fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+
+        xy_s1 = (range(len(data2)), data2)
+        xy_s2 = (range(len(data1)), data1)
+        plt.plot(xy_s1[0], xy_s1[1], '#440357', label=label2)
+        plt.scatter(xy_s2[0], xy_s2[1], color='#36b77b', label=label1, s=14)
+
+        plt.legend(loc='upper right', facecolor='#fff',
+                   prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 20})
+
+        # plt.savefig(f'图/loss.png', bbox_inches='tight')
+        plt.pause(3)
+        plt.close()
+    @staticmethod
+    # 双 线图
+    def paint_double(column, data1, label1, data2, label2, to_save=False, show=True, smooth=False, lang='en',
+                     sub_ax=None):
+        plt.figure(figsize=(19, 10), dpi=100)  # 设置画布大小，像素
+        plt.xticks(fontsize=20)
+        plt.yticks(fontsize=20)
+        data1, data2 = np.array(data1), np.array(data2)
+        plt.ylim((np.min(data2) * 0.7 if np.min(data2) > 0 else np.min(data2) * 1.3, np.max(data2) * 1.3))
+
+        plt.xlabel('Sample' if lang == 'en' else '样本', fontsize=20,
+                   fontproperties='Times New Roman' if lang == 'en' else 'SimSun')
+        plt.ylabel(column, fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+
+        if smooth:
+            xy_s1 = Plot.smooth_xy(range(len(data2)), data2)
+            xy_s2 = Plot.smooth_xy(range(len(data1)), data1)
+        else:
+            xy_s1 = (range(len(data2)), data2)
+            xy_s2 = (range(len(data1)), data1)
+
+        plt.plot(xy_s1[0], xy_s1[1], '#440357', label=label2)
+        # plt.plot(xy_s2[0], xy_s2[1], '#36b77b', label=label1)
+        plt.scatter(xy_s2[0] if sub_ax is None else sub_ax, xy_s2[1], color='#36b77b', label=label1, s=8)
+
+        plt.legend(loc='upper right', facecolor='#fff',
+                   prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 20})
+
+        if to_save:
+            plt.savefig(f'{to_save}', format='svg', bbox_inches='tight')
+        if show:
+            plt.show()
+        plt.close()
+
+        # pass
 
 
 if __name__ == '__main__':
@@ -294,6 +422,6 @@ if __name__ == '__main__':
     # 浊度
     # taylor(0.19, 0.3, 0.02, ENN.iloc[11, 8], ENN, RF, 0 , 0.3)
     # 矾
-    plot.taylor(0.4, 2.2, 0.3, ENN.iloc[0, 8], ENN, RF, 0, 2.8)
+    # plot.taylor(0.4, 2.2, 0.3, ENN.iloc[0, 8], ENN, RF, 0, 2.8)
     # axe = plt.subplot(1, 2, 2, projection='polar')
     # axe.plt.show()
