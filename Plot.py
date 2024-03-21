@@ -1,13 +1,23 @@
 import time
+import sys
+from math import pi
 
+import matplotlib
+from matplotlib.colors import ListedColormap
+
+sys.path.append('../')
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.font_manager import FontProperties
 from matplotlib.legend_handler import HandlerPatch
 import matplotlib.patches as mpatches
 from scipy.interpolate import make_interp_spline
+import matplotlib.pyplot as plt
+from matplotlib.path import Path
+from matplotlib.spines import Spine
+from matplotlib.projections.polar import PolarAxes
+from matplotlib.projections import register_projection
 
 # 坐标轴的刻度设置向内(in)或向外(out)
 plt.rcParams['xtick.direction'] = 'in'
@@ -140,6 +150,7 @@ class Plot:
         #            prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 16})
         plt.savefig('pics/知识驱动/' + str(int(time.time())) + '.png', dpi=300, bbox_inches='')
         plt.show()
+
     @staticmethod
     def taylor(r_small, r_big, r_interval, ref_std, ENN, RF, small, big):
         ENN = pd.read_excel('ENN09-21-10-11-59.xlsx', sheet_name='Sheet1')
@@ -289,6 +300,7 @@ class Plot:
         # cb = plt.colorbar(contourplot, pad=0.1, extend='both', shrink=0.8)
         # cb.set_label('RMSE (mg/L)')
         plt.show()
+
     @staticmethod
     def paint_error(data, data1, column: list, legend_str, pause=False, pause_time=3, to_save=False, smooth=False,
                     lang='en',
@@ -329,7 +341,8 @@ class Plot:
         # l1, = ax.plot(xy_s[0], xy_s[1], '#440357', label=f'{legend_str}', marker='o', markersize=5, markerfacecolor='white')
         # 设置图例的背景色为白色
 
-        l1, = ax.plot(xy_s[0], xy_s[1], '#36b77b', label=f'{legend_str}', marker='o', markersize=5, markerfacecolor='white')
+        l1, = ax.plot(xy_s[0], xy_s[1], '#36b77b', label=f'{legend_str}', marker='o', markersize=5,
+                      markerfacecolor='white')
         l2, = ax_sub.plot(xy_s1[0], xy_s1[1], '#440357', label=f'{legend_str}', marker='*', markersize=8,
                           markerfacecolor='white')
         # 放置图例
@@ -339,6 +352,7 @@ class Plot:
 
         if to_save:
             plt.savefig(fr'{column[0]}.png', bbox_inches='tight')
+
     @staticmethod
     def smooth_xy(lx, ly):
         """数据平滑处理
@@ -352,6 +366,7 @@ class Plot:
         x_smooth = np.linspace(x.min(), x.max(), 600)
         y_smooth = make_interp_spline(x, y)(x_smooth)
         return [x_smooth, y_smooth]
+
     @staticmethod
     def show_loss(history, pause=False):
         lang = 'zh'
@@ -380,6 +395,7 @@ class Plot:
         # plt.savefig(f'图/loss.png', bbox_inches='tight')
         plt.pause(3)
         plt.close()
+
     @staticmethod
     # 双 线图
     def paint_double(column, data1, label1, data2, label2, to_save=False, show=True, smooth=False, lang='en',
@@ -416,12 +432,215 @@ class Plot:
 
         # pass
 
+    @staticmethod
+    def radar():
+        plt.rcParams["font.family"] = 'SimSun'
+        data, data_mse = get_para_data()
+        spoke_labels = data.pop(0)
+        N = len(spoke_labels)
+        theta = radar_factory(N)
+
+        fig, axes = plt.subplots(figsize=(10, 7), dpi=100, nrows=1, ncols=1,
+                                 subplot_kw=dict(projection='radar'))
+        fig.subplots_adjust(wspace=0.25, hspace=0.50, top=0.9, bottom=0.05)
+
+        colors = tylor_color_list
+        # for ax, (title, case_data) in zip(axes.flatten(), data):
+        case_data = data[0]
+        ax = axes
+        # ax.set_rgrids([0.2, 0.25, 0.3, 0.35, 0.39], fontproperties='Times New Roman')
+        ax.set_rgrids([0.2, 0.25, 0.3, 0.35, 0.4, 0.45])
+        # # title
+        # ax.set_title(title, weight='bold', size='medium', position=(0.5, 1.1),
+        #              horizontalalignment='center', verticalalignment='center')
+        for index, d in enumerate(case_data):
+            color_index = int(data_mse[index] / 0.25 * len(tylor_color_list))
+            print(index + 1, data_mse[index], color_index)
+            ax.plot(theta, d, color=colors[color_index], alpha=1, marker='o', label='组合' + str(index + 1))
+            ax.fill(theta, d, facecolor=colors[color_index], alpha=1)
+
+        angles = [n / float(N) * 2 * pi for n in range(N)]
+        angles += angles[:1]
+        plt.xticks(angles[:-1], spoke_labels, color='black', size=14)
+
+        for label, i in zip(ax.get_xticklabels(), range(0, len(angles))):
+            angle_rad = angles[i]
+            # print(label,angle_rad)
+            if angle_rad == 0:
+                ha = 'center'
+                va = 'bottom'
+            elif 0 < angle_rad <= pi / 2:
+                ha = 'right'
+                va = "bottom"
+            elif pi / 2 < angle_rad < pi:
+                ha = 'right'
+                va = "bottom"
+            elif angle_rad == pi:
+                ha = 'center'
+                va = "center_baseline"
+
+            elif pi < angle_rad <= pi * 3 / 2:
+                ha = 'left'
+                va = "top"
+            elif pi * 3 / 2 < angle_rad < 2 * pi:
+
+                ha = 'left'
+                va = "top"
+            else:
+                ha = 'center'
+                va = "bottom"
+
+            label.set_verticalalignment(va)
+            label.set_horizontalalignment(ha)
+
+        legend = ax.legend(loc=(1.2, 0.15),
+                           labelspacing=0.5, fontsize='large')
+
+        # fig.text(0.5, 0.965, '5-Factor Solution Profiles Across Four Scenarios',
+        #          horizontalalignment='center', color='black', weight='bold',
+        #          size='large')
+        # 创建颜色条
+        sm = plt.cm.ScalarMappable(cmap=ListedColormap(colors))
+        sm.set_array([0, 0.25])
+        cbar = fig.colorbar(sm, ax=ax, orientation='horizontal', fraction=0.05, pad=0.08, aspect=50, extend='both',
+                            shrink=0.8)
+        # 自定义颜色条的长度和位置
+        cbar.ax.set_xlabel('MSE/NTU', rotation=0, labelpad=7, fontsize=12)  # 设置颜色条的标签
+        cbar.ax.tick_params(labelsize=12, pad=4)  # 设置刻度标签的字体大小
+        plt.savefig(f'pics/数据驱动/超参数_{int(time.time())}.png', bbox_inches='', dpi=200)
+        plt.show()
+
+
+def radar_factory(num_vars, frame='circle'):
+    """Create a radar chart with `num_vars` axes.
+
+    This function creates a RadarAxes projection and registers it.
+
+    Parameters
+    ----------
+    num_vars : int
+        Number of variables for radar chart.
+    frame : {'circle' | 'polygon'}
+        Shape of frame surrounding axes.
+
+    """
+    # calculate evenly-spaced axis angles
+    theta = np.linspace(0, 2 * np.pi, num_vars, endpoint=False)
+
+    def draw_poly_patch(self):
+        # rotate theta such that the first axis is at the top
+        verts = unit_poly_verts(theta + np.pi / 2)
+        return plt.Polygon(verts, closed=True, edgecolor='k')
+
+    def draw_circle_patch(self):
+        # unit circle centered on (0.5, 0.5)
+        return plt.Circle((0.5, 0.5), 0.5)
+
+    patch_dict = {'polygon': draw_poly_patch, 'circle': draw_circle_patch}
+    if frame not in patch_dict:
+        raise ValueError('unknown value for `frame`: %s' % frame)
+
+    class RadarAxes(PolarAxes):
+
+        name = 'radar'
+        # use 1 line segment to connect specified points
+        RESOLUTION = 1
+        # define draw_frame method
+        draw_patch = patch_dict[frame]
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            # rotate plot such that the first axis is at the top
+            self.set_theta_zero_location('N')
+
+        def fill(self, *args, closed=True, **kwargs):
+            """Override fill so that line is closed by default"""
+            return super().fill(closed=closed, *args, **kwargs)
+
+        def plot(self, *args, **kwargs):
+            """Override plot so that line is closed by default"""
+            lines = super().plot(*args, **kwargs)
+            for line in lines:
+                self._close_line(line)
+
+        def _close_line(self, line):
+            x, y = line.get_data()
+            # FIXME: markers at x[0], y[0] get doubled-up
+            if x[0] != x[-1]:
+                x = np.concatenate((x, [x[0]]))
+                y = np.concatenate((y, [y[0]]))
+                line.set_data(x, y)
+
+        def set_varlabels(self, labels):
+            self.set_thetagrids(np.degrees(theta), labels, position=(0, 0))
+
+        def _gen_axes_patch(self):
+            return self.draw_patch()
+
+        def _gen_axes_spines(self):
+            if frame == 'circle':
+                return super()._gen_axes_spines()
+            # The following is a hack to get the spines (i.e. the axes frame)
+            # to draw correctly for a polygon frame.
+
+            # spine_type must be 'left', 'right', 'top', 'bottom', or `circle`.
+            spine_type = 'circle'
+            verts = unit_poly_verts(theta + np.pi / 2)
+            # close off polygon by repeating first vertex
+            verts.append(verts[0])
+            path = Path(verts)
+
+            spine = Spine(self, spine_type, path)
+            spine.set_transform(self.transAxes)
+
+            return {'polar': spine}
+
+    class CustomPolarAxes(PolarAxes):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._rlabelpos = 0.85  # 默认的标签位置
+
+        def set_rlabel_position(self, pos):
+            self._rlabelpos = pos
+            self.set_varlabels(self.get_varlabels(), rlabelpos=self._rlabelpos)
+
+        def get_rlabel_position(self):
+            return self._rlabelpos
+
+    register_projection(RadarAxes)
+    return theta
+
+
+def unit_poly_verts(theta):
+    """Return vertices of polygon for subplot axes.
+
+    This polygon is circumscribed by a unit circle centered at (0.5, 0.5)
+    """
+    x0, y0, r = [0.5] * 3
+    verts = [(r * np.cos(t) + x0, r * np.sin(t) + y0) for t in theta]
+    return verts
+
+
+def get_para_data():
+    pd_data = pd.read_csv('data/数据驱动/模型超参数.csv')
+    data_mse = list(pd_data['MSE'])
+    pd_data = pd_data.drop(['MSE', '组合序号'], axis=1)
+    labels = list(pd_data.head())
+    data = np.array(pd_data)
+    # 计算数组的范数
+    norm = np.linalg.norm(data, axis=0)
+    # 对数组进行归一化
+    normalized_data = data / norm
+    data = [labels, normalized_data]
+    return data, data_mse
+
 
 if __name__ == '__main__':
-    plot = Plot()
+    # plot = Plot()
     # 浊度
     # taylor(0.19, 0.3, 0.02, ENN.iloc[11, 8], ENN, RF, 0 , 0.3)
     # 矾
     # plot.taylor(0.4, 2.2, 0.3, ENN.iloc[0, 8], ENN, RF, 0, 2.8)
     # axe = plt.subplot(1, 2, 2, projection='polar')
     # axe.plt.show()
+    Plot.radar()
