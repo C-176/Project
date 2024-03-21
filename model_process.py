@@ -151,7 +151,8 @@ def MD_threshold(true, pred, test_data=True):
 
 class ModelFactory:
     def __init__(self, cycle_period=7, data_days=0):
-        self.project_path = 'C:\\Users\\Ryker\\OneDrive\\桌面\\课题代码\\大论文'
+        # self.project_path = 'C:\\Users\\Ryker\\OneDrive\\桌面\\课题代码\\大论文'
+        self.project_path = 'D:\\Python源码\\06_深度学习\\Project'
         self.DATA_DAYS = data_days
         self.CYCLE_PERIOD = cycle_period
         self.init_logger()
@@ -210,11 +211,12 @@ class ModelFactory:
             # from_date, from_time = get_datetime(from_date, from_time, -24 * self.DATA_DAYS)
             # df_data_source = self.get_data_from_sql(from_date)
             # df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}.csv', index=None)
-            df_data_source = pd.read_csv(fr'{self.project_path}\\data\\数据驱动\\data_1710677626.csv')
+            df_data_source = pd.read_csv(fr'{self.project_path}\\data\\数据驱动\\{data_path}')
             if ano:
                 # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
                 df_data_source = self.remake(df_data_source, df_data_source)
                 df_data_source.index = range(len(df_data_source))
+                df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}_ano.csv', index=None)
             save_list = fr'{self.project_path}\\models\\{today_date}\\'
             if not os.path.exists(save_list):
                 os.makedirs(save_list)
@@ -549,7 +551,7 @@ class ModelFactory:
 
             def global_attention(inputs):
                 # 使用一个全连接层计算注意力分数
-                scores = tf.keras.layers.Dense(units=input_size, activation='tanh')(inputs)
+                scores = tf.keras.layers.Dense(units=inputs.shape[2], activation='tanh')(inputs)
                 # 对注意力分数进行softmax归一化
                 scores = tf.keras.layers.Softmax(-2)(scores)
 
@@ -590,25 +592,12 @@ class ModelFactory:
             # 定义输入层
             inputs = tf.keras.layers.Input(shape=(TIME_STEPS, input_size))
 
-            if ATTENTION == 'global':
-                attention = global_attention(inputs)
-            else:
-                # 将输入层的每个特征维度分别进行局部注意力处理
-                attended_inputs = []
-                for i in range(input_size):
-                    if i in attention_col:  # 对PH值进行更长的窗口大小的局部注意力处理
-                        attended_inputs.append(local_attention(inputs[:, :, i:i + 1], window_size=int(TIME_STEPS / 2)))
-                    else:  # 对其他指标进行较短的窗口大小的局部注意力处理
-                        attended_inputs.append(local_attention(inputs[:, :, i:i + 1], window_size=int(TIME_STEPS / 3)))
-                attention = tf.keras.layers.concatenate(attended_inputs)
 
             # 应用GRU层
             gru_output = tf.keras.layers.GRU(units=center_size - output_size, return_sequences=True)(inputs)
-            # gru_output = tf.keras.layers.BatchNormalization()(gru_output)
 
-            # 将GRU输出和注意力层的输出拼接起来
-            merged_output = tf.keras.layers.concatenate([gru_output, attention])
-            # merged_output = gru_output
+
+            merged_output = gru_output
 
             # 应用全连接层
             fc_output = tf.keras.layers.Dense(units=hidden_size, activation='relu',
@@ -616,7 +605,7 @@ class ModelFactory:
             fc_output = tf.keras.layers.BatchNormalization()(fc_output)
 
             if ATTENTION == 'global':
-                attention = global_attention(inputs)
+                attention = global_attention(fc_output)
             else:
                 # 将输入层的每个特征维度分别进行局部注意力处理
                 attended_inputs = []
@@ -1076,6 +1065,7 @@ with open(yaml_path, 'r', encoding='utf-8') as f:
     READ = model_config['READ']
     LEARNING_RATE = model_config['LEARNING_RATE']
     DAYS = model_config['DAYS']
+    data_path = model_config['data_path']
 
     SHOW_ANOMALY = detect_config['SHOW_ANOMALY']
     REMAKE_EPOCH = detect_config['REMAKE_EPOCH']

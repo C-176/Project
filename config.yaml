@@ -5,7 +5,7 @@ ModelConfig:
   dataset: 'part'
   split: 0.2
   ano: 0
-  EPOCH: 30
+  EPOCH: 300
   BATCH_SIZE: 64
   LEARNING_RATE: 0.001
   TIME_STEPS: 1
@@ -14,6 +14,7 @@ ModelConfig:
   SHOW: 1
   READ: 0
   DAYS: 360
+  data_path: 'data_1710770284_ano.csv'
 
 AEConfig:
   SHOW_ANOMALY: show
