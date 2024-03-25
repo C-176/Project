@@ -399,7 +399,7 @@ class Plot:
     @staticmethod
     # 双 线图
     def paint_double(column, data1, label1, data2, label2, to_save=False, show=True, smooth=False, lang='en',
-                     sub_ax=None):
+                     sub_ax=None, dict1=None):
         plt.figure(figsize=(19, 10), dpi=100)  # 设置画布大小，像素
         plt.xticks(fontsize=20)
         plt.yticks(fontsize=20)
@@ -417,8 +417,12 @@ class Plot:
             xy_s1 = (range(len(data2)), data2)
             xy_s2 = (range(len(data1)), data1)
 
-        plt.plot(xy_s1[0], xy_s1[1], '#440357', label=label2)
-        plt.plot(xy_s2[0], xy_s2[1], '#36b77b', label=label1)
+        plt.plot(xy_s1[0], xy_s1[1], tylor_color_list[0],marker_list[0], label=label2)
+        plt.plot(xy_s2[0], xy_s2[1], tylor_color_list[1],marker_list[1], label=label1)
+        if dict1:
+            for i,items in enumerate(dict1):
+                plt.plot(range(len(dict1[items])), dict1[items],tylor_color_list[i+2],marker=marker_list[i+2], label=items)
+
         # plt.scatter(xy_s2[0] if sub_ax is None else sub_ax, xy_s2[1], color='#36b77b', label=label1, s=8)
 
         plt.legend(loc='upper right', facecolor='#fff',

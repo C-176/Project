@@ -1,5 +1,6 @@
 import logging
 import os
+from enum import Enum
 from logging.handlers import TimedRotatingFileHandler
 
 import numpy as np
@@ -8,12 +9,18 @@ import pandas as pd
 from Metrics import Metrics
 from public_util import *
 from Plot import Plot
+from model_process import ModelFactory
+
+
 
 
 class Project:
     csv_index_list = ['1号矾投加量', '1号沉淀池出水浊度']
     sql_index_list = ['cdcjfl1', 'cdczd1']
     index_dict = {0: '矾', 1: '出水浊度'}
+    model_factory = ModelFactory()
+
+
 
     month_dict = {
         1: ["01-01", "01-31"],
@@ -135,6 +142,11 @@ class Project:
                         {'未应用专家系统（矾量）': mean_list1[12:], '应用专家系统（矾量）': mean_list2[12:]}]
              }, lang='zh'
         )
+
+
+    def test(self):
+        # 运行RF、GRU、GRU_LA
+        self.model_factory.model_train()
 
 
 if __name__ == '__main__':

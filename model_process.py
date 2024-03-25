@@ -2,6 +2,7 @@ import logging
 import pickle
 import random
 import shutil
+from enum import Enum
 from itertools import accumulate
 from logging.handlers import TimedRotatingFileHandler
 
@@ -20,7 +21,6 @@ from tensorflow.python.keras.models import load_model
 from tensorflow.python.layers.base import *
 from tensorflow.python.keras import losses
 
-from  GRU_attention import *
 from Metrics import Metrics
 from Plot import Plot
 from loss import *
@@ -120,7 +120,6 @@ def inverse_transform(scaler, front_data, after_data, col_index, TIME_STEPS=1):
     return after_data[TIME_STEPS - 1:]
 
 
-
 def MD_threshold(true, pred, test_data=True):
     diff = pred - true
     for i in range(len(true.columns)):
@@ -149,10 +148,18 @@ def MD_threshold(true, pred, test_data=True):
     return threshold
 
 
+class ProjectModel(Enum):
+    RF = 'RF'
+    ANN = 'ANN'
+    GRU = 'GRU'
+    GRU_LA = 'GRU_LA'
+    GRU_LA_EWC = 'GRU_LA_EWC'
+
+
 class ModelFactory:
     def __init__(self, cycle_period=7, data_days=0):
-        # self.project_path = 'C:\\Users\\Ryker\\OneDrive\\桌面\\课题代码\\大论文'
-        self.project_path = 'D:\\Python源码\\06_深度学习\\Project'
+        self.project_path = 'C:\\Users\\Ryker\\OneDrive\\桌面\\课题代码\\大论文'
+        # self.project_path = 'D:\\Python源码\\06_深度学习\\Project'
         self.DATA_DAYS = data_days
         self.CYCLE_PERIOD = cycle_period
         self.init_logger()
@@ -193,9 +200,11 @@ class ModelFactory:
             list1 = scored[scored[str(i) + '_Anomaly'] == True].index
             if detect_show:
                 Plot.paint_double(i, [X_train[i][j] for j in list1], '异常数据', X_train[i],
-                             '原始数据', to_save=fr'{self.project_path}\pics\数据驱动\异常数据_{i}_{int(time.time())}.png', lang='zh',
-                             sub_ax=[i - TIME_STEPS + 1 for i in list1],
-                             show=detect_show)
+                                  '原始数据',
+                                  to_save=fr'{self.project_path}\pics\数据驱动\异常数据_{i}_{int(time.time())}.png',
+                                  lang='zh',
+                                  sub_ax=[i - TIME_STEPS + 1 for i in list1],
+                                  show=detect_show)
 
     def update_model(self):
         try:
@@ -211,12 +220,13 @@ class ModelFactory:
             # from_date, from_time = get_datetime(from_date, from_time, -24 * self.DATA_DAYS)
             # df_data_source = self.get_data_from_sql(from_date)
             # df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}.csv', index=None)
-            df_data_source = pd.read_csv(fr'{self.project_path}\\data\\数据驱动\\{data_path}')
+            df_data_source = pd.read_csv(fr'{self.project_path}\\data\\数据驱动\\{data_path}')[300000:]
             if ano:
                 # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
                 df_data_source = self.remake(df_data_source, df_data_source)
                 df_data_source.index = range(len(df_data_source))
-                df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}_ano.csv', index=None)
+                df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}_ano.csv',
+                                      index=None)
             save_list = fr'{self.project_path}\\models\\{today_date}\\'
             if not os.path.exists(save_list):
                 os.makedirs(save_list)
@@ -247,18 +257,55 @@ class ModelFactory:
                     df_data = df_data[selected_features]
                 # self.logger.info(df_data.head(1))
                 self.logger.info(ALUM_TARGET_LIST[0])
-                alum_model = self.lstm_train(df_data, df_target)
-                self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum.pkl')
+                error_dict = {}
+                predict_dict = {}
+                threshold_dict = {ProjectModel.RF: 3.5,
+                                  ProjectModel.GRU: 1.8,
+                                  ProjectModel.GRU_LA: 0.8,
+                                  ProjectModel.GRU_LA_EWC: 0.2}
+                m = ProjectModel.GRU
+                alum_model, error_list_gru, result_gru, y_test = self.model_train(df_data, df_target,m=m)
+                self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum-({m}).pkl')
+                alum_model.save(save_list + fr'Pool{index}_ALUM_predict_({m}).model')
+                error_dict[m] = error_list_gru
+                predict_dict[m] = result_gru
+                m = ProjectModel.GRU_LA
+                alum_model, error_list_grula, result_grula, _ = self.model_train(df_data, df_target,m=m)
+                self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum-({m}).pkl')
+                alum_model.save(save_list + fr'Pool{index}_ALUM_predict_({m}).model')
+                error_dict[m] = error_list_grula
+                predict_dict[m] = result_grula
+                m = ProjectModel.RF
+                rf, error_list_rf, result_rf = self.RF_train(df_data, df_target)
+                np.reshape(error_list_rf, (len(error_list_rf), 1))
+                error_dict[m] = error_list_rf
+                predict_dict[m] = result_rf
+                Plot.paint_double('xx', y_test, 'true', predict_dict[ProjectModel.RF], ProjectModel.RF,
+                                  dict1={ProjectModel.GRU: predict_dict[ProjectModel.GRU],
+                                         ProjectModel.GRU_LA: predict_dict[ProjectModel.GRU_LA]})
 
-                df_data, df_target = self.data_split(df_data_source, NTU_DATA_LIST, NTU_TARGET_LIST)
+                # 取出
+                for items in error_dict:
+                    error_dict[items] = np.where(abs(error_dict[items]) > threshold_dict[items])
 
-                self.logger.info(NTU_TARGET_LIST[0])
-                ntu_model = self.lstm_train(df_data, df_target)
-                self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-ntu.pkl')
+                del_index = list(error_dict[ProjectModel.RF][0])
+                for items in error_dict:
+                    del_index += list(error_dict[items][0])
+                del_index = np.array(list(set(del_index)))
 
-                # 保存模型
-                ntu_model.save(save_list + fr'Pool{index}_NTU_predict.model')
-                alum_model.save(save_list + fr'Pool{index}_ALUM_predict.model')
+                last_y_test = np.delete(y_test, del_index)
+                for items in predict_dict:
+                    predict_dict[items] = np.delete(predict_dict[items], del_index)
+                    print(items, self.metrics.r2(last_y_test, predict_dict[items]))
+                Plot.paint_double('xx', last_y_test, 'true', predict_dict[ProjectModel.RF], ProjectModel.RF,
+                                  dict1={ProjectModel.GRU: predict_dict[ProjectModel.GRU],
+                                         ProjectModel.GRU_LA: predict_dict[ProjectModel.GRU_LA]})
+
+                # df_data, df_target = self.data_split(df_data_source, NTU_DATA_LIST, NTU_TARGET_LIST)
+                # self.logger.info(NTU_TARGET_LIST[0])
+                # ntu_model,_ = self.model_train(df_data, df_target)
+                # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-ntu.pkl')
+                # ntu_model.save(save_list + fr'Pool{index}_NTU_predict.model')
 
                 # sql = 'update qjf_model_train set ntu_update_datetime = now(),alum_update_datetime=now(),ntu_model_name="%s",alum_model_name="%s" where id = %d' % (
                 #     save_list, save_list, index)
@@ -367,7 +414,6 @@ class ModelFactory:
         self.logger.info("获取数据完成")
         remove_list = ['id', 'Date_S', 'Time_S', 'jsll', 'next_date', 'pass_dis', 'seconds', 'secondsx']
         forward_data.drop(remove_list, axis=1, inplace=True)
-
 
         # 将数据进行滤波
         # forward_data = filter_df(forward_data, 10)
@@ -508,7 +554,7 @@ class ModelFactory:
     def load_scaler(self, file_path):
         return pickle.load(open(file_path, 'rb'))
 
-    def lstm_train(self, data, target):
+    def model_train(self, data, target, m=ProjectModel.GRU_LA):
         # 设置随机种子
         tf.random.set_seed(2022)
         dataset = pd.concat([data, target], axis=1)
@@ -533,18 +579,6 @@ class ModelFactory:
         val_X = add_demension(valX, TIME_STEPS)
         train_Y, test_Y, val_Y = trainY[TIME_STEPS - 1:], testY[TIME_STEPS - 1:], valY[TIME_STEPS - 1:]
         self.logger.info(f'shape: {train_X.shape}, {val_X.shape}, {test_X.shape}')
-
-        # 定义一个自定义的层，用于计算每个特征的重要性
-        # class Permutation(Layer):
-        #     def __init__(self, **kwargs):
-        #         super(Permutation, self).__init__(**kwargs)
-        #
-        #     def call(self, inputs):
-        #         x, y = inputs
-        #         shape = K.shape(x)
-        #         perm = K.random_uniform_variable(shape=(shape[2],), low=0, high=shape[2], dtype='int32')
-        #         x_perm = tf.gather(x, perm, axis=2)
-        #         return K.mean(y - self.model(x_perm), axis=0)
 
         def gru_with_local_attention(center_size=64, hidden_size=128, l2_regularization=0.001, learning_rate=0.01):
             attention_col = [input_size - 1]
@@ -592,10 +626,8 @@ class ModelFactory:
             # 定义输入层
             inputs = tf.keras.layers.Input(shape=(TIME_STEPS, input_size))
 
-
             # 应用GRU层
             gru_output = tf.keras.layers.GRU(units=center_size - output_size, return_sequences=True)(inputs)
-
 
             merged_output = gru_output
 
@@ -619,11 +651,12 @@ class ModelFactory:
                 attention = tf.keras.layers.concatenate(attended_inputs)
             # 添加GRU层
             gru_output = tf.keras.layers.GRU(units=center_size, return_sequences=True)(fc_output)
-            # 将GRU输出和注意力层的输出拼接起来
-            merged_output = tf.keras.layers.concatenate([gru_output, attention])
+            if m == ProjectModel.GRU_LA or m == ProjectModel.GRU_LA_EWC:
+                # 将GRU输出和注意力层的输出拼接起来
+                gru_output = tf.keras.layers.concatenate([gru_output, attention])
             # 定义输出层
             outputs = tf.keras.layers.Dense(units=output_size, activation='linear',
-                                            kernel_regularizer=regularizers.l2(l2_regularization))(merged_output)
+                                            kernel_regularizer=regularizers.l2(l2_regularization))(gru_output)
             # 构建模型
             model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
 
@@ -633,51 +666,6 @@ class ModelFactory:
             # 编译模型，并指定优化器
 
             model.compile(optimizer=optimizer, loss=tilde_q_loss, metrics=['mae'])
-            return model
-
-        def gru_with_attention(center_size=64, hidden_size=128, l2_regularization=0.001, learning_rate=0.01):
-            # 定义输入层
-            inputs = tf.keras.layers.Input(shape=(TIME_STEPS, input_size))
-
-            # 编码器部分
-            encoder_gru = tf.keras.layers.GRU(units=center_size - output_size, return_sequences=False)(inputs)
-            encoder_output = tf.keras.layers.BatchNormalization()(encoder_gru)
-
-            # 解码器部分
-            decoder_inputs = tf.keras.layers.RepeatVector(TIME_STEPS)(encoder_output)
-            decoder_gru = tf.keras.layers.GRU(units=center_size - output_size, return_sequences=True)(decoder_inputs)
-            decoder_output = tf.keras.layers.BatchNormalization()(decoder_gru)
-
-            # 注意力机制
-            attention_scores = tf.keras.layers.Dense(units=1, activation='tanh')(decoder_output)
-            attention_scores = tf.keras.layers.Flatten()(attention_scores)
-            attention_weights = tf.keras.layers.Softmax()(attention_scores)
-            attention_weights = tf.keras.layers.RepeatVector(center_size - output_size)(attention_weights)
-            attention_weights = tf.keras.layers.Permute([2, 1])(attention_weights)
-            attended_encoder_output = tf.keras.layers.multiply([encoder_output, attention_weights])
-
-            # 拼接编码器输出和注意力加权后的输出
-            merged_output = tf.keras.layers.concatenate([decoder_output, attended_encoder_output])
-
-            # 全连接层
-            fc_output = tf.keras.layers.Dense(units=hidden_size, activation='relu',
-                                              kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))(
-                merged_output)
-            fc_output = tf.keras.layers.BatchNormalization()(fc_output)
-
-            # 输出层
-            outputs = tf.keras.layers.Dense(units=output_size, activation='linear',
-                                            kernel_regularizer=tf.keras.regularizers.l2(l2_regularization))(fc_output)
-
-            # 构建模型
-            model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
-
-            # 定义优化器，并设置学习率
-            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-
-            # 编译模型，并指定优化器
-            model.compile(optimizer=optimizer, loss=tilde_q_loss, metrics=['mae'])
-
             return model
 
         input_size, output_size = trainX.shape[1], trainY.shape[1]
@@ -685,16 +673,6 @@ class ModelFactory:
         # model = GRUWithLocalAttention(input_shape=(TIME_STEPS, input_size))
         # model.compile(loss=tilde_q_loss)
         # model.summary()
-
-        def scheduler(epoch):
-            # 每隔100个epoch，学习率减小为原来的0.9
-            if epoch % 100 == 0 and epoch != 0:
-                lr = K.get_value(model.optimizer.lr)
-                K.set_value(model.optimizer.lr, lr * 0.9)
-                self.log_write("学习率降低为： {}".format(lr * 0.9))
-            return K.get_value(model.optimizer.lr)
-
-        reduce_lr = LearningRateScheduler(scheduler)
 
         reduce_lr_auto = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=20, mode='auto')
         history = model.fit(train_X, train_Y, epochs=EPOCH, batch_size=BATCH_SIZE,
@@ -705,21 +683,21 @@ class ModelFactory:
 
         # Plot.show_loss(history, True)
 
-        # 计算每个特征的重要性
-        n_features = train_X.shape[2]
-        perm_scores = np.zeros(n_features)
-        for i in range(n_features):
-            x_test_perm = train_X.copy()
-            np.random.shuffle(x_test_perm[:, :, i])
-            perm_scores[i] = model.evaluate(x_test_perm, train_Y, verbose=0)[1]
-
-        # 展示每个特征的重要性
-        feature_names = data.columns
-        sorted_idx = perm_scores.argsort()[::-1]
-        for index, i in enumerate(sorted_idx):
-            if index == 7:
-                break
-            self.logger.info('{:20s} : {:.2f}%'.format(feature_names[i], perm_scores[i] * 100))
+        # # 计算每个特征的重要性
+        # n_features = train_X.shape[2]
+        # perm_scores = np.zeros(n_features)
+        # for i in range(n_features):
+        #     x_test_perm = train_X.copy()
+        #     np.random.shuffle(x_test_perm[:, :, i])
+        #     perm_scores[i] = model.evaluate(x_test_perm, train_Y, verbose=0)[1]
+        #
+        # # 展示每个特征的重要性
+        # feature_names = data.columns
+        # sorted_idx = perm_scores.argsort()[::-1]
+        # for index, i in enumerate(sorted_idx):
+        #     if index == 7:
+        #         break
+        #     self.logger.info('{:20s} : {:.2f}%'.format(feature_names[i], perm_scores[i] * 100))
 
         test_result = model.predict(test_X)
         train_result = model.predict(train_X)
@@ -747,25 +725,28 @@ class ModelFactory:
             y_test, test_result)
         # 计算测试集的RMSE和MAPE
         train_RMSE, val_RMSE, test_RMSE = self.metrics.rmse(y_train, train_result), self.metrics.rmse(y_val,
-                                                                                                val_result), self.metrics.rmse(
+                                                                                                      val_result), self.metrics.rmse(
             y_test, test_result)
         train_MAPE, val_MAPE, test_MAPE = self.metrics.mape(y_train, train_result), self.metrics.mape(y_val,
-                                                                                                val_result), self.metrics.mape(
+                                                                                                      val_result), self.metrics.mape(
             y_test, test_result)
         column += unit
         if train_show:
             Plot.paint_double(column, train_result,
-                         f'预测值',
-                         y_train, '实测值', fr'{self.project_path}\pics\数据驱动\GRU_TRAIN_{int(time.time())}.png', smooth=False,
-                         lang=lang, show=train_show)
+                              f'预测值',
+                              y_train, '实测值', fr'{self.project_path}\pics\数据驱动\GRU_TRAIN_{int(time.time())}.png',
+                              smooth=False,
+                              lang=lang, show=train_show)
             Plot.paint_double(column, val_result,
-                         f'预测值', y_val,
-                         "实测值", fr'{self.project_path}\pics\数据驱动\GRU_VAL_{int(time.time())}.png', smooth=False, lang=lang,
-                         show=train_show)
+                              f'预测值', y_val,
+                              "实测值", fr'{self.project_path}\pics\数据驱动\GRU_VAL_{int(time.time())}.png',
+                              smooth=False, lang=lang,
+                              show=train_show)
             Plot.paint_double(column, test_result,
-                         f'预测值', y_test,
-                         "实测值", fr'{self.project_path}\pics\数据驱动\GRU_TEST_{int(time.time())}.png', smooth=False, lang=lang,
-                         show=train_show)
+                              f'预测值', y_test,
+                              "实测值", fr'{self.project_path}\pics\数据驱动\GRU_TEST_{int(time.time())}.png',
+                              smooth=False, lang=lang,
+                              show=train_show)
         self.log_write(
             f'[模型开发] Hidden_size:{Hidden_size} EPOCH:{EPOCH} Batch_size:{BATCH_SIZE} center_size:{center_size} Time_steps:{TIME_STEPS} ')
         # self.log_write(f'[自编码器] autoencoder:{MODEL_NAME} batch_size:{BATCH_SIZE} epochs:{EPOCH}')
@@ -773,16 +754,18 @@ class ModelFactory:
         self.log_write(f'train_RMSE:{train_RMSE:.4f} val_RMSE:{val_RMSE:.4f} test_RMSE:{test_RMSE:.4f}')
         self.log_write(f'train_MAPE:{train_MAPE:.4f}% val_MAPE:{val_MAPE:.4f}% test_MAPE:{test_MAPE:.4f}%')
 
-        return model
+        error_list = np.array(test_result) - np.array(y_test)
 
-    def train(self, data, target):
+        return model, error_list, test_result, y_test
+
+    def RF_train(self, data, target):
         self.logger.info("模型训练开始")
         x = data
         y = target
         self.logger.info("开始划分数据集")
         # 划分数据集 train_data：所要划分的样本特征集 train_target：所要划分的样本结果 test_size：样本占比，如果是整数的话就是样本的数量
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, shuffle=False)
-        x_test, x_val, y_test, y_val = train_test_split(x_test, y_test, test_size=0.5, shuffle=False)
+        x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=0.8, shuffle=False)
         y_train = np.array(y_train).reshape(len(y_train), )  # 转化标签张量的维度
         y_test = np.array(y_test).reshape(len(y_test))
         self.logger.info("交叉验证")
@@ -795,7 +778,7 @@ class ModelFactory:
 
         RF = RandomForestRegressor()
         # K_Fold
-        kFold = KFold(n_splits=10, shuffle=False)
+        kFold = KFold(n_splits=2, shuffle=False)
         grid = GridSearchCV(RF, para_grid, cv=kFold, n_jobs=5)  # 交叉验证，10层
         self.logger.info("开始训练")
         grid.fit(x_train, y_train)  # 训练
@@ -828,15 +811,16 @@ class ModelFactory:
         MSE = metrics.mean_squared_error(y_test, RF_result)
         R2 = metrics.r2_score(y_test, RF_result)
         self.logger.info("测试集--MSE：" + str(MSE) + ";  R2: " + str(R2))
-        # 验证
-        # RF.fit(x_val, y_val)
-        RF_result = RF.predict(x_val)
-        # Plot.paint_double('RF', y_val, 'true', RF_result, 'predict')
-        # 计算均方方差和R2
-        MSE = metrics.mean_squared_error(y_val, RF_result)
-        R2 = metrics.r2_score(y_val, RF_result)
-        self.logger.info("验证集--MES：" + str(MSE) + ";  R2: " + str(R2))
-        return RF
+        error_list = y_test - RF_result
+        # # 验证
+        # # RF.fit(x_val, y_val)
+        # RF_result = RF.predict(x_val)
+        # # Plot.paint_double('RF', y_val, 'true', RF_result, 'predict')
+        # # 计算均方方差和R2
+        # MSE = metrics.mean_squared_error(y_val, RF_result)
+        # R2 = metrics.r2_score(y_val, RF_result)
+        # self.logger.info("验证集--MES：" + str(MSE) + ";  R2: " + str(R2))
+        return RF, error_list, RF_result
 
     def model_predict(self, x, model, timesteps, file_path):
         if len(x) < timesteps:

@@ -3,6 +3,11 @@ from sklearn import metrics  # 评价指标
 
 
 class Metrics:
+
+    R2 = 0
+    MSE = 0
+    RMSE = 0
+
     def __init__(self):
         pass
 
