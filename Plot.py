@@ -398,30 +398,29 @@ class Plot:
 
     @staticmethod
     # 双 线图
-    def paint_double(column, data1, label1, data2, label2, to_save=False, show=True, smooth=False, lang='en',
-                     sub_ax=None, dict1=None):
+    def paint_double(column, to_save=False, show=True, smooth=False, lang='en',
+                     sub_ax=None, data_dict=None):
         plt.figure(figsize=(19, 10), dpi=100)  # 设置画布大小，像素
         plt.xticks(fontsize=20)
         plt.yticks(fontsize=20)
-        data1, data2 = np.array(data1), np.array(data2)
-        # plt.ylim((np.min(data2) * 0.7 if np.min(data2) > 0 else np.min(data2) * 1.3, np.max(data2) * 1.3))
 
         plt.xlabel('Sample' if lang == 'en' else '样本', fontsize=20,
                    fontproperties='Times New Roman' if lang == 'en' else 'SimSun')
         plt.ylabel(column, fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        from scipy.signal import savgol_filter
 
-        if smooth:
-            xy_s1 = Plot.smooth_xy(range(len(data2)), data2)
-            xy_s2 = Plot.smooth_xy(range(len(data1)), data1)
-        else:
-            xy_s1 = (range(len(data2)), data2)
-            xy_s2 = (range(len(data1)), data1)
+        # 使用Savitzky-Golay滤波器平滑数据
+        window_size = 5  # 窗口大小，必须是奇数
+        poly_order = 3  # 多项式的阶数
 
-        plt.plot(xy_s1[0], xy_s1[1], tylor_color_list[0],marker_list[0], label=label2)
-        plt.plot(xy_s2[0], xy_s2[1], tylor_color_list[1],marker_list[1], label=label1)
-        if dict1:
-            for i,items in enumerate(dict1):
-                plt.plot(range(len(dict1[items])), dict1[items],tylor_color_list[i+2],marker=marker_list[i+2], label=items)
+        if data_dict:
+            for i, items in enumerate(data_dict):
+                if smooth:
+                    data = savgol_filter(data_dict[items], window_size, poly_order)
+                else:
+                    data = data_dict[items]
+                plt.plot(range(len(data)), data, color=color_list[i],
+                         marker=marker_list[i], label=items)
 
         # plt.scatter(xy_s2[0] if sub_ax is None else sub_ax, xy_s2[1], color='#36b77b', label=label1, s=8)
 

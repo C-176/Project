@@ -18,7 +18,6 @@ class Project:
     csv_index_list = ['1号矾投加量', '1号沉淀池出水浊度']
     sql_index_list = ['cdcjfl1', 'cdczd1']
     index_dict = {0: '矾', 1: '出水浊度'}
-    model_factory = ModelFactory()
 
 
 
@@ -42,6 +41,7 @@ class Project:
         self.metrics = Metrics()
         self.init_logger()
         self.plot = Plot()
+        self.model_factory = ModelFactory()
 
     def init_logger(self):
         # 创建logger对象
@@ -144,11 +144,20 @@ class Project:
         )
 
 
-    def test(self):
-        # 运行RF、GRU、GRU_LA
-        self.model_factory.model_train()
+    def ano_detect(self):
+        sql = 'select alum_update_datetime from qjf_model_train where id = %d' % 1
+        result = query(sql)[0][0]
+        # 计算result和today_date的时间差
+        from_date, from_time = str(result).split(' ')[0], str(result).split(' ')[1]
+        from_date, from_time = get_datetime(from_date, from_time, -24 * self.model_factory.DATA_DAYS)
+        df_data_source = self.model_factory.get_data_from_sql(from_date)
+        # df_data_source = pd.read_csv(fr'{self.model_factory.project_path}\\data\\数据驱动\\{data_path}')
+        # df_data_source = df_data_source[30000:]
+        # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
+        df_data_source = self.model_factory.remake(df_data_source, df_data_source)
 
 
 if __name__ == '__main__':
     project = Project()
-    project.knowledge_compare()
+    # project.knowledge_compare()
+    project.ano_detect()
