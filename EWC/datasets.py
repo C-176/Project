@@ -4,13 +4,33 @@ scalable to large arrays.
 """
 
 import numpy as np
+import pandas as pd
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
 from tensorflow.python.keras.layers import Normalization, RandomTranslation, RandomFlip
+
+from model_process import ModelFactory, add_demension
+
+
+def load_timeseries_data(features, targets):
+    """
+    Load the time series dataset for regression.
+
+    :return: Tuple of NumPy arrays (inputs, targets).
+    """
+    # 如果需要，可以在这里进行数据预处理，例如归一化
+    features = (features - np.mean(features)) / (np.std(features) + 1e-7)
+    targets = (targets - np.mean(targets)) / (np.std(targets) + 1e-7)
+
+    return features, targets
+
 
 dataset_dict = {
     "mnist": tf.keras.datasets.mnist,
     "cifar10": tf.keras.datasets.cifar10,
-    "cifar100": tf.keras.datasets.cifar100
+    "cifar100": tf.keras.datasets.cifar100,
+    'gru': load_timeseries_data
 }
 
 
@@ -29,7 +49,8 @@ def input_shape(dataset):
     sizes = {
         "mnist": (28, 28, 1),
         "cifar10": (32, 32, 3),
-        "cifar100": (32, 32, 3)
+        "cifar100": (32, 32, 3),
+        'gru': (128, 1, 13)
     }
     return sizes[dataset]
 
@@ -42,7 +63,8 @@ def num_classes(dataset):
     classes = {
         "mnist": 10,
         "cifar10": 10,
-        "cifar100": 100
+        "cifar100": 100,
+        'gru': 14
     }
     return classes[dataset]
 
@@ -69,19 +91,44 @@ def load_data(dataset):
     :param dataset: Name of dataset.
     :return: NumPy tuples (train_data, train_labels), (test_data, test_labels)
     """
-    (train_x, train_y), (test_x, test_y) = dataset_dict[dataset].load_data()
+    if dataset == 'gru':
+        model_factory = ModelFactory()
+        data, target = model_factory.load_data()
+        dataset = pd.concat([data, target], axis=1)
+        test_size = 1000
+        scaler = MinMaxScaler()  # 归一化模板
+        scaler = scaler.fit(dataset)
 
-    # MNIST comes without a channels dimension, and Keras layers don't like it.
-    if dataset == "mnist":
-        train_x = np.expand_dims(train_x, 3)
-        test_x = np.expand_dims(test_x, 3)
+        dataset = scaler.transform(dataset)  # 归一化数据
 
-    # By default, MNIST's labels are 1D, but CIFAR's are 2D. Make them all 1D.
-    train_y = train_y.reshape([-1])
-    test_y = test_y.reshape([-1])
+        x = dataset[:, :-1]
+        y = dataset[:, -1:]
+        # # 划分数据集
+        trainX, testX, trainY, testY = train_test_split(x, y, test_size=2, shuffle=False, random_state=2022)
+        testX, testY = x[-test_size:, :], y[-test_size:, :]
+        valX, testX, valY, testY = train_test_split(testX, testY, test_size=0.5, shuffle=False, random_state=2022)
+        # LSTM模型
+        TIME_STEPS = 1
+        train_X = add_demension(trainX, TIME_STEPS)
+        test_X = add_demension(testX, TIME_STEPS)
+        val_X = add_demension(valX, TIME_STEPS)
+        train_Y, test_Y, val_Y = trainY[TIME_STEPS - 1:], testY[TIME_STEPS - 1:], valY[TIME_STEPS - 1:]
+        return (train_X, train_Y), (test_X, test_Y)
 
-    # Bring all input values down to the range [0, 1].
-    return (train_x / 255, train_y), (test_x / 255, test_y)
+    else:
+        (train_x, train_y), (test_x, test_y) = dataset_dict[dataset].load_data()
+
+        # MNIST comes without a channels dimension, and Keras layers don't like it.
+        if dataset == "mnist":
+            train_x = np.expand_dims(train_x, 3)
+            test_x = np.expand_dims(test_x, 3)
+
+        # By default, MNIST's labels are 1D, but CIFAR's are 2D. Make them all 1D.
+        train_y = train_y.reshape([-1])
+        test_y = test_y.reshape([-1])
+
+        # Bring all input values down to the range [0, 1].
+        return (train_x / 255, train_y), (test_x / 255, test_y)
 
 
 def split_data(data, fractions=None, classes=None):
@@ -154,7 +201,7 @@ def permute_pixels(data, permutations, permutation=None):
     result = [data]
     images, labels = data
     shape = images.shape
-    pixels = shape[1]*shape[2]
+    pixels = shape[1] * shape[2]
 
     # Assuming dimensions are (batch, height, width, [channels])
     flattened = np.reshape(images, [shape[0], pixels, -1])

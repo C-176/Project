@@ -43,15 +43,16 @@ if __name__ == "__main__":
     )
 
     training = parser.add_argument_group(title="Normal training")
-    training.add_argument("--batch-size", type=int, default=256, metavar="N",
+    training.add_argument("--batch-size", type=int, default=128, metavar="N",
                           help="Number of inputs to process simultaneously")
     training.add_argument("--epochs", type=int, default=30, metavar="N",
                           help="Number of iterations through training dataset")
     training.add_argument("--learning-rate", type=float, default=0.001,
                           metavar="LR", help="Initial learning rate for Adam")
     training.add_argument("--model", type=str, choices=models.models(),
-                          default="mlp", help="Neural network to train")
+                          default="gru", help="Neural network to train")
     training.add_argument("--dataset", type=str, choices=datasets.datasets(),
+                          default="gru",
                           help="Dataset to use (default: specified by model)")
 
     inc = parser.add_argument_group(title="Incremental learning")

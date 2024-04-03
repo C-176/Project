@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.layers import AveragePooling2D, Conv2D, Dense, Flatten
 from tensorflow.keras.activations import relu, softmax, tanh
+from tensorflow.python.keras import regularizers
 from tensorflow.python.keras.layers import Dropout, BatchNormalization
 
 import datasets
@@ -110,10 +111,44 @@ class CifarNet(tf.keras.Model):
         return self.model.call(inputs, training, mask)
 
 
+class GRU(tf.keras.Model):
+    """
+    Simple CNN for CIFAR-10 and CIFAR-100.
+    """
+
+    def __init__(self, dataset):
+        super(GRU, self).__init__()
+        self.center_size = 50
+        self.hidden_size = 100
+        self.output_size = 1
+        self.dataset = "gru" if dataset is None else dataset
+        self.num_classes = datasets.num_classes(self.dataset)
+        self.model = tf.keras.Sequential([
+            # 定义输入层 tf.keras.layers.Input(shape=(TIME_STEPS, input_size)),
+            tf.keras.layers.GRU(units=self.center_size - self.output_size, return_sequences=True),
+
+            tf.keras.layers.Dense(units=self.hidden_size, activation='relu',
+                                  kernel_regularizer=regularizers.l2(0.01)),
+
+            tf.keras.layers.GRU(units=self.center_size, return_sequences=True),
+
+            tf.keras.layers.Dense(units=self.output_size, activation='linear',
+                                  kernel_regularizer=regularizers.l2(0.01)),
+
+        ])
+
+    def get_config(self):
+        return {"num_classes": self.num_classes}
+
+    def call(self, inputs, training=None, mask=None):
+        return self.model.call(inputs, training, mask)
+
+
 model_dict = {
     "cifarnet": CifarNet,
     "lenet": LeNet5,
-    "mlp": MLP
+    "mlp": MLP,
+    'gru': GRU
 }
 
 

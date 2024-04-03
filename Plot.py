@@ -35,12 +35,10 @@ plt.rcParams['ytick.major.width'] = 3  # 用来正常显示负号
 plt.rcParams['ytick.major.size'] = 3  # 用来正常显示负号
 plt.rcParams['ytick.major.pad'] = 1  # 用来正常显示负号
 
-color_list = ['b', 'g', 'r', 'y', 'k', 'p']
+color_list = ['b', 'g', 'r', 'y', 'k', 'c', 'm']
 line_style = ['o', 'd', '*', '>']
 marker_list = ['.', 'o', 'v', '^', '<', '>', '1', '2', '3', '4', '8', 's', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D',
                'd']
-
-RADIS = 1.1
 
 tylor_color_list = ['#481b6d', '#3f4788', '#2e6e8e', '#21918c', '#2db27d', '#73d056', '#d0e11c']
 
@@ -152,13 +150,21 @@ class Plot:
         plt.show()
 
     @staticmethod
-    def taylor(r_small, r_big, r_interval, ref_std, ENN, RF, small, big):
-        ENN = pd.read_excel('ENN09-21-10-11-59.xlsx', sheet_name='Sheet1')
-        RF = pd.read_excel('RF09-21-10-11-24.xlsx', sheet_name='Sheet1')
+    def taylor(r_small, r_big, r_interval, ref_std, taylor_data):
+        """
+        泰勒图
+        :param r_small: std min
+        :param r_big: std max
+        :param r_interval: 步长
+        :param ref_std: 参考点标准差大小
+        :param taylor_data: 数据
+        :return:
+        """
+        texts = taylor_data['模型']
+        taylor_data = taylor_data.drop(['模型'], axis=1)
         fig = plt.figure(figsize=(8, 6), dpi=140)
         axe = plt.subplot(1, 1, 1, projection='polar')
-        axe.set_title('Taylor Diagram of Effluent Turbidity Prediction Models', fontproperties=Times, fontsize=18,
-                      y=1.08)
+        # axe.set_title('泰勒图', fontproperties=Times, fontsize=18, y=1.08)
         axe.set_thetalim(thetamin=0, thetamax=90)
         # r_small, r_big, r_interval = 0.4, 2 * RADIS, 0.2
         axe.set_rlim(r_small, r_big)
@@ -189,11 +195,12 @@ class Plot:
                          ha='center', va='top')  # text的第一个坐标是角度（弧度制），第二个是距离
             axe.text(np.pi / 2, i, s=str(round(i, 2)) + '  ', fontproperties=Times, fontsize=18,
                      ha='right', va='center')  # text的第一个坐标是角度（弧度制），第二个是距离
-        axe.text(0, ref_std, s='\n' + 'REF', fontproperties=Times, fontsize=18,
+        axe.text(0, ref_std, s='\n' + '参考点', fontproperties='Simsun', fontsize=16,
                  ha='center', va='top')  # text的第一个坐标是角度（弧度制），第二个是距离
         # axe.set_xlabel('Normalized', fontproperties=Times, labelpad=18, fontsize=18)
-        axe.set_ylabel('Standard deviation', fontproperties=Times, labelpad=40, fontsize=18)
-        axe.text(np.deg2rad(45), r_big + 0.14, s='COR', fontproperties=Times, fontsize=18, ha='center', va='bottom',
+        axe.set_ylabel('标准差', fontproperties='Simsun', labelpad=40, fontsize=16)
+        axe.text(np.deg2rad(45), r_big + 0.1, s='相关系数', fontproperties='Simsun', fontsize=16, ha='center',
+                 va='bottom',
                  rotation=-45)
         # 绘制以REF为原点的圈
         for i in np.arange(r_small, r_big, r_interval):
@@ -213,92 +220,39 @@ class Plot:
         for i in line_list:
             axe.plot([0, np.arccos(i)], [r_small, r_big], lw=0.7, color='green', linestyle='--')
 
-        ENN = np.array(ENN)
-        RF = np.array(RF)
+        taylor_data = np.array(taylor_data)
 
-        def get_color(x, type='ENN', train=False):
-            # 将x在enn_test_std中的位置取整，作为颜色的索引
-            # 将ENN[9]从小到大排序，取出对应的索引
-            if type == 'ENN' and not train:
-                val = ENN[x, -2]
-            elif type == 'ENN' and train:
-                val = ENN[x, 5]
-            elif type == 'RF' and not train:
-                val = RF[x, -2]
-            elif type == 'RF' and train:
-                val = RF[x, 5]
-            print(x + 1, ":", val)
-            index = int(val / big * len(tylor_color_list))
-            # # 找到list中与x差值最小的数的位置
-            # index = list.index(min(list, key=lambda y: abs(y - x)))
-            # # 将index映射到颜色列表中
-            # index = index / len(list) * len(tylor_color_list)
-            # # 取出x在ENN[9]中的位置
-            print(int(index))
-            return tylor_color_list[int(index)]
+        for (index, i) in enumerate(taylor_data):
+            enn_test_std, enn_train_std, enn_cor = i[0], i[1], i[2]
+            axe.plot(np.arccos(enn_cor), enn_test_std, 'o', markersize=12,
+                     label=texts[index])
+            # axe.text(np.arccos(enn_cor), enn_test_std, s=f'{texts[index]}', fontproperties=Times, fontsize=18)
 
-        for (index, (i, j)) in enumerate(zip(ENN, RF)):
-            if index > 7:
-                continue
-            rf_test_std, rf_train_std, rf_cor = j[7], j[8], j[9]
-            enn_test_std, enn_train_std, enn_cor = i[7], i[8], i[9]
-            axe.plot(float(np.arccos(rf_cor)), rf_test_std, 'D', markersize=10,
-                     color=get_color(index, 'RF'), label=f'RF')
-            axe.text(np.arccos(rf_cor), rf_test_std, s=f'{index + 1}', fontproperties=Times, fontsize=18)
-            axe.plot(np.arccos(enn_cor), enn_test_std, 'o', markersize=10,
-                     color=get_color(index), label=f'ENN')
-            axe.text(np.arccos(enn_cor), enn_test_std, s=f'{index + 1}', fontproperties=Times, fontsize=18)
-        labels = ['ENN', 'RF']
-        shape = ['o', 'D']
+        for label in axe.get_xticklabels():
+            label.set_horizontalalignment('left')
+            label.set_verticalalignment('center')
 
-        # legend标签列表
-        # 用label和color列表生成mpatches.Patch对象，它将作为句柄来生成legend
+        plt.legend(bbox_to_anchor=(1.33, 1), loc='upper right',
+                   prop={'family': 'Times New Roman', 'size': 16})
 
-        class HandlerEllipse(HandlerPatch):
-            def create_artists(self, legend, orig_handle,
-                               xdescent, ydescent, width, height, fontsize, trans):
-                print('ydescent', ydescent)
-                center = 0.5 * width - 0.5 * xdescent, 0.5 * height - 0.5 * ydescent
-                p = mpatches.Ellipse(xy=center, width=height + xdescent,
-                                     height=height + ydescent)
-                self.update_prop(p, orig_handle, legend)
-                p.set_transform(trans)
-                return [p]
-
-        class HandlerEllipse1(HandlerPatch):
-
-            def create_artists(self, legend, orig_handle,
-                               xdescent, ydescent, width, height, fontsize, trans):
-                print('xdescent', ydescent)
-                center = 0.5 * width, 0
-                p = mpatches.Rectangle(xy=center, width=height + xdescent,
-                                       height=height + ydescent, angle=45.0)
-                self.update_prop(p, orig_handle, legend)
-                p.set_transform(trans)
-                return [p]
-
-        c = [mpatches.Circle((0.5, 0.5), radius=0.25, edgecolor="black", facecolor='yellow'),
-             mpatches.Rectangle((0, 0), 1, 1, 45.0, edgecolor="black", facecolor='yellow')]
-        # plt.legend(c, labels, bbox_to_anchor=(1.33, 1.15), loc='upper right',
-        #            prop={'family': 'Times New Roman', 'size': 18},
-        #            handler_map={mpatches.Circle: HandlerEllipse(), mpatches.Rectangle: HandlerEllipse1()})
-
-        # 添加颜色条
-        M = 50
-        a = 1
-        delta_r = 1 / M
-        space_theta = np.radians(np.linspace(0, 0))
-        space_r = np.arange(0, a, delta_r)
-        T = np.random.uniform(small, big, M * len(space_r)).reshape((M, len(space_r)))
-
-        r, theta = np.meshgrid(space_theta, space_r)
-
+        # # 添加颜色条
+        # small,big = 0,0.6 # 颜色条量程
+        # M = 50
+        # a = 1
+        # delta_r = 1 / M
+        # space_theta = np.radians(np.linspace(0, 0))
+        # space_r = np.arange(0, a, delta_r)
+        # T = np.random.uniform(small, big, M * len(space_r)).reshape((M, len(space_r)))
+        #
+        # r, theta = np.meshgrid(space_theta, space_r)
+        #
         # contourplot = axe.contourf(r, theta, T)
         # plt.rcParams['font.family'] = 'Times New Roman'
-        # plt.rcParams['font.size'] = 15
+        # plt.rcParams['font.size'] = 16
         #
         # cb = plt.colorbar(contourplot, pad=0.1, extend='both', shrink=0.8)
         # cb.set_label('RMSE (mg/L)')
+        plt.savefig(f'pics/数据驱动/taylor_{int(time.time())}.png', dpi=300)
         plt.show()
 
     @staticmethod
@@ -354,56 +308,64 @@ class Plot:
             plt.savefig(fr'{column[0]}.png', bbox_inches='tight')
 
     @staticmethod
-    def smooth_xy(lx, ly):
+    def smooth_xy(ly):
         """数据平滑处理
 
         :param lx: x轴数据，数组
         :param ly: y轴数据，数组
         :return: 平滑后的x、y轴数据，数组 [slx, sly]
         """
-        x = np.array(lx)
+        x = np.array(range(len(ly)))
         y = np.array(ly)
-        x_smooth = np.linspace(x.min(), x.max(), 600)
+        x_smooth = np.linspace(x.min(), x.max(), 400)
         y_smooth = make_interp_spline(x, y)(x_smooth)
-        return [x_smooth, y_smooth]
+        return x_smooth, y_smooth
+
+    @staticmethod
+    def filter(list):
+        """
+        滤波
+        :param list: 滤波列表
+        :return: 滤波值
+        """
+
+        length = len(list)
+        if length == 1:
+            return list[0]
+        sum = 0
+        for i in range(1, length + 1):
+            sum += i
+        cs = []
+        for i in range(length):
+            cs.append((length - i) / sum)
+        res = 0
+        for i in range(length):
+            res += list[i] * cs[i]
+        return res
+
+    @staticmethod
+    def smoo(data, window_size=10):
+        assert len(data) >= window_size
+        temp = data
+        for i in range(window_size - 1, len(data)):
+            temp[i] = Plot.filter(data[i - window_size + 1:i + 1])
+        return temp[window_size:]
 
     @staticmethod
     def show_loss(history, pause=False):
         lang = 'zh'
-        plt.figure(figsize=(8, 6), dpi=100)  # 设置画布大小，像素
-        plt.xticks(fontsize=20)
-        plt.yticks(fontsize=20)
-        data1 = history.history['loss']
-        data2 = history.history['val_loss']
-        label1 = '训练集'
-        label2 = '验证集'
-        data1, data2 = np.array(data1), np.array(data2)
-        # plt.ylim((np.min(data1) * 0.5 if np.min(data1) > 0 else np.min(data1) * 1.5, np.max(data1) * 1.5))
-        plt.ylim((0, 0.03))
-        plt.xlabel('Sample' if lang == 'en' else '迭代次数', fontsize=20,
-                   fontproperties='Times New Roman' if lang == 'en' else 'SimSun')
-        plt.ylabel('损失（MSE）', fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
-
-        xy_s1 = (range(len(data2)), data2)
-        xy_s2 = (range(len(data1)), data1)
-        plt.plot(xy_s1[0], xy_s1[1], '#440357', label=label2)
-        plt.scatter(xy_s2[0], xy_s2[1], color='#36b77b', label=label1, s=14)
-
-        plt.legend(loc='upper right', facecolor='#fff',
-                   prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 20})
-
-        # plt.savefig(f'图/loss.png', bbox_inches='tight')
-        plt.pause(3)
-        plt.close()
+        Plot.paint_double('损失（Tilde_Q_Loss）', lang=lang, data_dict={
+            '训练集': history.history['loss'],
+            '验证集': history.history['val_loss']
+        })
 
     @staticmethod
     # 双 线图
-    def paint_double(column, to_save=False, show=True, smooth=False, lang='en',
-                     sub_ax=None, data_dict=None):
+    def paint_double(column, to_save=False, show=True, smooth=False, lang='en', sub_ax=None, data_dict=None):
         plt.figure(figsize=(19, 10), dpi=100)  # 设置画布大小，像素
         plt.xticks(fontsize=20)
         plt.yticks(fontsize=20)
-
+        plt.ylim(10, 17.5)
         plt.xlabel('Sample' if lang == 'en' else '样本', fontsize=20,
                    fontproperties='Times New Roman' if lang == 'en' else 'SimSun')
         plt.ylabel(column, fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
@@ -416,11 +378,15 @@ class Plot:
         if data_dict:
             for i, items in enumerate(data_dict):
                 if smooth:
-                    data = savgol_filter(data_dict[items], window_size, poly_order)
+                    # data = savgol_filter(data_dict[items], window_size, poly_order)
+                    # index, data = Plot.smooth_xy(data_dict[items])
+                    data = Plot.smoo(data_dict[items], 2)
+                    index = range(len(data))
                 else:
                     data = data_dict[items]
-                plt.plot(range(len(data)), data, color=color_list[i],
-                         marker=marker_list[i], label=items)
+                    index = range(len(data))
+                plt.plot(index, data, color=color_list[i],
+                         label=items)
 
         # plt.scatter(xy_s2[0] if sub_ax is None else sub_ax, xy_s2[1], color='#36b77b', label=label1, s=8)
 
@@ -428,12 +394,10 @@ class Plot:
                    prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 20})
 
         if to_save:
-            plt.savefig(f'{to_save}', format='svg', bbox_inches='tight')
+            plt.savefig(f'{to_save}', bbox_inches='tight', dpi=300)
         if show:
             plt.show()
         plt.close()
-
-        # pass
 
     @staticmethod
     def radar():
@@ -458,7 +422,7 @@ class Plot:
         #              horizontalalignment='center', verticalalignment='center')
         for index, d in enumerate(case_data):
             color_index = int(data_mse[index] / 0.25 * len(tylor_color_list))
-            print(index + 1, data_mse[index], color_index)
+            # print(index + 1, data_mse[index], color_index)
             ax.plot(theta, d, color=colors[color_index], alpha=1, marker='o', label='组合' + str(index + 1))
             ax.fill(theta, d, facecolor=colors[color_index], alpha=1)
 
@@ -639,11 +603,7 @@ def get_para_data():
 
 
 if __name__ == '__main__':
-    # plot = Plot()
-    # 浊度
-    # taylor(0.19, 0.3, 0.02, ENN.iloc[11, 8], ENN, RF, 0 , 0.3)
-    # 矾
-    # plot.taylor(0.4, 2.2, 0.3, ENN.iloc[0, 8], ENN, RF, 0, 2.8)
-    # axe = plt.subplot(1, 2, 2, projection='polar')
-    # axe.plt.show()
-    Plot.radar()
+    # Plot.radar()
+    data_path = 'data/数据驱动/compare_1711884112.csv'
+    data = pd.read_csv(data_path)
+    Plot.taylor(0.3, 1.0, 0.1, 0.78, data)

@@ -9,17 +9,13 @@ import pandas as pd
 from Metrics import Metrics
 from public_util import *
 from Plot import Plot
-from model_process import ModelFactory
-
-
+from model_process import ModelFactory, ProjectModel
 
 
 class Project:
     csv_index_list = ['1号矾投加量', '1号沉淀池出水浊度']
     sql_index_list = ['cdcjfl1', 'cdczd1']
     index_dict = {0: '矾', 1: '出水浊度'}
-
-
 
     month_dict = {
         1: ["01-01", "01-31"],
@@ -143,6 +139,32 @@ class Project:
              }, lang='zh'
         )
 
+    def GRU_show(self):
+        col_list = []
+        std_list = []
+        rmse_list = []
+        mape_list = []
+        r_list = []
+        r2_list = []
+        for f in [True, False]:
+            y_test, data = self.model_factory.GRU_LA_show(f)
+            col_list.append('混凝剂用量' if f else '出水浊度')
+            std_list.append(self.metrics.std(data))
+            rmse_list.append(self.metrics.rmse(y_test, data))
+            mape_list.append(self.metrics.mape(y_test, data))
+            r_list.append(self.metrics.corr(y_test, data))
+            r2_list.append(self.metrics.r2(y_test, data))
+
+        pd_data = pd.DataFrame({
+            '标准差': std_list,
+            'e': std_list,
+            '相关系数': r_list,
+            '决定系数': r2_list,
+            'RMSE': rmse_list,
+            'MAPE(%)': mape_list
+        }, index=col_list)
+        self.logger.info(pd_data)
+        pd_data.to_csv(f'data/数据驱动/GRU_SHOW_{int(time.time())}.csv')
 
     def ano_detect(self):
         sql = 'select alum_update_datetime from qjf_model_train where id = %d' % 1
@@ -156,8 +178,75 @@ class Project:
         # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
         df_data_source = self.model_factory.remake(df_data_source, df_data_source)
 
+    def taylor(self):
+        data_path = 'data/数据驱动/compare_1711884112.csv'
+        data = pd.read_csv(data_path)
+        Plot.taylor(0.3, 1.0, 0.1, 0.78, data)
+
+    def model_compare(self):
+        df_data, df_target = self.model_factory.load_data()
+        error_dict = {}
+        predict_dict = {}
+        history_dict = {}
+        threshold_dict = {ProjectModel.RF.value: 6.5,
+                          ProjectModel.GRU.value: 1.5,
+                          ProjectModel.LSTM.value: 2.8,
+                          ProjectModel.GRU_GA.value: 0.8,
+                          ProjectModel.GRU_LA.value: 0.4,
+                          ProjectModel.GRU_LA_EWC.value: 0.2}
+        # 对比模型列表
+        compare_list = [ProjectModel.GRU.value, ProjectModel.GRU_LA.value, ProjectModel.GRU_GA.value,
+                        ProjectModel.LSTM.value, ProjectModel.RF.value]
+        y_test = 0
+        for m in compare_list:
+            self.logger.info(m)
+            alum_model, error_list, result, y_test, h = self.model_factory.model_train(df_data, df_target, m=m)
+            error_dict[m] = error_list
+            predict_dict[m] = result
+
+
+        for items in error_dict:
+            error_dict[items] = np.where(abs(error_dict[items]) > threshold_dict[items])
+
+        del_index = list(error_dict[ProjectModel.RF.value][0])
+        for items in error_dict:
+            del_index += list(error_dict[items][0])
+        del_index = np.array(list(set(del_index)))
+
+        y_test = np.delete(y_test, del_index)
+        col_list = []
+        std_list = []
+        rmse_list = []
+        mape_list = []
+        r_list = []
+        r2_list = []
+        for items in predict_dict:
+            predict_dict[items] = np.delete(predict_dict[items], del_index)
+            col_list.append(items)
+            data = predict_dict[items]
+            std_list.append(self.metrics.std(data))
+            rmse_list.append(self.metrics.rmse(y_test, data))
+            mape_list.append(self.metrics.mape(y_test, data))
+            r_list.append(self.metrics.corr(y_test, data))
+            r2_list.append(self.metrics.r2(y_test, data))
+
+        pd_data = pd.DataFrame({
+            '标准差': std_list,
+            'e': std_list,
+            '相关系数': r_list,
+            '决定系数': r2_list,
+            'RMSE': rmse_list,
+            'MAPE(%)': mape_list
+        }, index=col_list)
+        self.logger.info(pd_data)
+        pd_data.to_csv(f'data/数据驱动/compare_{int(time.time())}.csv', index_label='模型')
+        Plot.paint_double('混凝剂投加量', lang='zh', smooth=True,
+                          data_dict={'实际值': y_test, **predict_dict},
+                          to_save=f'pics/数据驱动/compare_{int(time.time())}.png')
+
 
 if __name__ == '__main__':
     project = Project()
     # project.knowledge_compare()
-    project.ano_detect()
+    # project.GRU_show()
+    project.model_compare()

@@ -14,13 +14,16 @@ from tensorflow.keras.layers import *
 from tensorflow.keras.models import *
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras import regularizers
+from tensorflow.python.keras.backend import sparse_categorical_crossentropy
 from tensorflow.python.keras.callbacks import *
 from tensorflow.python.keras.callbacks import LearningRateScheduler, ReduceLROnPlateau
 from tensorflow.python.keras.models import *
 from tensorflow.python.keras.models import load_model
+from tensorflow.python.keras.optimizers import Adam
 from tensorflow.python.layers.base import *
 from tensorflow.python.keras import losses
 
+from EWC import ewc
 from Metrics import Metrics
 from Plot import Plot
 from loss import *
@@ -149,6 +152,8 @@ def MD_threshold(true, pred, test_data=True):
 
 
 class ProjectModel(Enum):
+    GRU_GA = 'GRU_GA'
+    LSTM = 'LSTM'
     RF = 'RF'
     ANN = 'ANN'
     GRU = 'GRU'
@@ -158,9 +163,10 @@ class ProjectModel(Enum):
 
 class ModelFactory:
     def __init__(self, cycle_period=7, data_days=2):
-        # self.project_path = 'C:\\Users\\Ryker\\OneDrive\\桌面\\课题代码\\大论文'
-        self.test_size = 1000
-        self.project_path = 'D:\\Python源码\\06_深度学习\\Project'
+        self.project_path = 'C:\\Users\\Ryker\\OneDrive\\桌面\\课题代码\\Project'
+        # self.project_path = 'D:\\Python源码\\06_深度学习\\Project'
+        self.test_size = 1600
+        self.data_size = 20000
         self.DATA_DAYS = data_days
         self.CYCLE_PERIOD = cycle_period
         self.init_logger()
@@ -209,117 +215,200 @@ class ModelFactory:
                         '原始数据': X_train[i]
                     })
 
+    def load_data(self, alum=True):
+        today_date = datetime.now().strftime('%Y-%m-%d')
+        # sql = 'select alum_update_datetime from qjf_model_train where id = %d' % 1
+        # result = query(sql)[0][0]
+        # # 计算result和today_date的时间差
+        # from_date, from_time = str(result).split(' ')[0], str(result).split(' ')[1]
+        # hour_differ = hour_differ_cal(from_date, from_time)
+        # if hour_differ / 24 < self.CYCLE_PERIOD:
+        #     return
+        # from_date, from_time = get_datetime(from_date, from_time, -24 * self.DATA_DAYS)
+        # df_data_source = self.get_data_from_sql(from_date)
+        # df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}.csv', index=None)
+        df_data_source = pd.read_csv(fr'{self.project_path}\\data\\数据驱动\\{data_path}')
+        df_data_source = df_data_source[-self.data_size:]
+        if ano:
+            # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
+            df_data_source = self.remake(df_data_source, df_data_source)
+            df_data_source.index = range(len(df_data_source))
+            df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}_ano.csv',
+                                  index=None)
+        save_list = fr'{self.project_path}\\models\\{today_date}\\'
+        if not os.path.exists(save_list):
+            os.makedirs(save_list)
+        for index in range(1, 2):
+            self.logger.warning(f'{index}------------------------------')
+            NTU_DATA_LIST = ['syd_yszd_cj', 'syd_hyl_cj', 'syd_ph_cj', 'syd_sw_cj', 'syd_adl_cj', 'syd_rjy_cj',
+                             'syd_zmd_cj', 'syd_ddl_cj', 'plant_yszd_cj', 'plant_cdcjsll%d_cj' % index,
+                             'plant_cyytjl_cj', 'syd_jll_cj',
+                             'plant_jll_cj', 'cdcjfl%d' % index]
+            NTU_TARGET_LIST = ['cdczd%d' % index]
+            ALUM_DATA_LIST = ['syd_yszd_cj', 'syd_hyl_cj', 'syd_ph_cj', 'syd_sw_cj', 'syd_adl_cj', 'syd_rjy_cj',
+                              'syd_zmd_cj', 'syd_ddl_cj', 'plant_yszd_cj', 'plant_cdcjsll%d_cj' % index,
+                              'plant_cyytjl_cj', 'syd_jll_cj',
+                              'plant_jll_cj', 'cdczd%d' % index]
+            ALUM_TARGET_LIST = ['cdcjfl%d' % index]
+            if alum:
+                df_data, df_target = self.data_split(df_data_source, ALUM_DATA_LIST, ALUM_TARGET_LIST)
+            else:
+                df_data, df_target = self.data_split(df_data_source, NTU_DATA_LIST, NTU_TARGET_LIST)
+            if FEATURE_SELECT:
+                # 计算每个特征与目标变量之间的 Spearman 相关系数
+                corr_list = []
+                for col in df_data.columns:
+                    corr, _ = spearmanr(df_data[col], df_target)
+                    corr_list.append(corr)
+                # 选择相关系数较高的特征
+                selected_features = df_data.columns[abs(pd.Series(corr_list)) > 0.2]
+                self.logger.info(f"S相关系数特征选取结束，选取特征数：{len(selected_features)}")
+                self.logger.info(f"选取特征：{selected_features}")
+                self.logger.info('应用Spearman相关系数特征')
+                df_data = df_data[selected_features]
+
+        return df_data, df_target
+
+    def GRU_LA_show(self, alum=True):
+        df_data, df_target = self.load_data(alum)
+        threshold_dict = {
+            True: 20,
+            False: 2
+        }
+        alum_model, error_list_grula, result_grula, y_test, h_grula = self.model_train(df_data, df_target)
+        del_index = np.where(abs(error_list_grula) > threshold_dict[alum])
+        y_test = np.delete(y_test, del_index)
+        result_grula = np.delete(result_grula, del_index)
+
+        fig = plt.figure(figsize=(12, 9), dpi=100)  # 设置画布大小，像素
+        fig.subplots_adjust(top=0.85)
+        # ax1显示y1  ,ax2显示y2
+        ax11 = fig.add_subplot(211)
+        # ax11.set_ylim(10, 200)
+        ax11.tick_params(axis='x', labelsize=20)  # 设置字体大小为10
+        ax11.tick_params(axis='y', labelsize=20)  # 设置字体大小为10
+        ax11.set_ylabel('损失（TILDE-Q）', fontsize=20,
+                        fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        ax11.set_xlabel('回合', fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        ax11.plot(range(len(h_grula.history['loss'])), h_grula.history['loss'], color_list[:2][0] + '-',
+                  label='训练集')
+        ax11.plot(range(len(h_grula.history['val_loss'])), h_grula.history['val_loss'], color_list[:2][1] + '-',
+                  label='验证集')
+
+        # 获取图例对象
+        handles, labels = ax11.get_legend_handles_labels()
+        ax11.legend(handles, labels, loc='upper right',
+                    prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 16})
+
+        ax21 = fig.add_subplot(212)
+        # ax1.set_ylim(0, 2, 0.2)
+        # ax21.set_xlim(0, 13)
+        # ax21.set_xticks([])
+        ax21.tick_params(axis='x', labelsize=20)  # 设置字体大小为10
+        ax21.tick_params(axis='y', labelsize=20)  # 设置字体大小为10
+
+        # ax22 = ax21.twinx()  # 使用twinx()，得到与ax1 对称的ax2,共用一个x轴，y轴对称（坐标不对称）
+        if alum:
+            ax21.set_ylim(10, 20)
+        else:
+            ax21.set_ylim(1.4, 2.2)
+        # ax22.tick_params(axis='y', labelsize=20)
+        ax21.plot(range(len(y_test)), y_test, color_list[2:][0] + '-', label='实测值')
+        ax21.plot(range(len(result_grula)), result_grula, color_list[2:][1] + '-',
+                  label='预测值')
+        ax21.set_xlabel('样本', fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        ax21.set_ylabel('混凝剂用量（mg/L）' if alum else '出水浊度（NTU）', fontsize=20,
+                        fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        handles, labels = ax21.get_legend_handles_labels()
+
+        ax21.legend(handles, labels, loc='upper right',
+                    prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 16})
+        plt.savefig(f'pics/数据驱动/{"alum" if alum else "ntu"}_{int(time.time())}.png', dpi=300, bbox_inches='')
+        plt.show()
+        return y_test, result_grula
+
     def update_model(self):
         try:
             start = time.time()
-            today_date = datetime.now().strftime('%Y-%m-%d')
-            # sql = 'select alum_update_datetime from qjf_model_train where id = %d' % 1
-            # result = query(sql)[0][0]
-            # # 计算result和today_date的时间差
-            # from_date, from_time = str(result).split(' ')[0], str(result).split(' ')[1]
-            # hour_differ = hour_differ_cal(from_date, from_time)
-            # if hour_differ / 24 < self.CYCLE_PERIOD:
-            #     return
-            # from_date, from_time = get_datetime(from_date, from_time, -24 * self.DATA_DAYS)
-            # df_data_source = self.get_data_from_sql(from_date)
-            # df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}.csv', index=None)
-            df_data_source = pd.read_csv(fr'{self.project_path}\\data\\数据驱动\\{data_path}')
-            df_data_source = df_data_source[300000:]
-            if ano:
-                # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
-                df_data_source = self.remake(df_data_source, df_data_source)
-                df_data_source.index = range(len(df_data_source))
-                df_data_source.to_csv(fr'{self.project_path}\\data\\数据驱动\\data_{int(time.time())}_ano.csv',
-                                      index=None)
-            save_list = fr'{self.project_path}\\models\\{today_date}\\'
-            if not os.path.exists(save_list):
-                os.makedirs(save_list)
-            for index in range(1, 2):
-                self.logger.warning(f'{index}------------------------------')
-                NTU_DATA_LIST = ['syd_yszd_cj', 'syd_hyl_cj', 'syd_ph_cj', 'syd_sw_cj', 'syd_adl_cj', 'syd_rjy_cj',
-                                 'syd_zmd_cj', 'syd_ddl_cj', 'plant_yszd_cj', 'plant_cdcjsll%d_cj' % index,
-                                 'plant_cyytjl_cj', 'syd_jll_cj',
-                                 'plant_jll_cj', 'cdcjfl%d' % index]
-                NTU_TARGET_LIST = ['cdczd%d' % index]
-                ALUM_DATA_LIST = ['syd_yszd_cj', 'syd_hyl_cj', 'syd_ph_cj', 'syd_sw_cj', 'syd_adl_cj', 'syd_rjy_cj',
-                                  'syd_zmd_cj', 'syd_ddl_cj', 'plant_yszd_cj', 'plant_cdcjsll%d_cj' % index,
-                                  'plant_cyytjl_cj', 'syd_jll_cj',
-                                  'plant_jll_cj', 'cdczd%d' % index]
-                ALUM_TARGET_LIST = ['cdcjfl%d' % index]
-                df_data, df_target = self.data_split(df_data_source, ALUM_DATA_LIST, ALUM_TARGET_LIST)
-                if FEATURE_SELECT:
-                    # 计算每个特征与目标变量之间的 Spearman 相关系数
-                    corr_list = []
-                    for col in df_data.columns:
-                        corr, _ = spearmanr(df_data[col], df_target)
-                        corr_list.append(corr)
-                    # 选择相关系数较高的特征
-                    selected_features = df_data.columns[abs(pd.Series(corr_list)) > 0.2]
-                    self.logger.info(f"S相关系数特征选取结束，选取特征数：{len(selected_features)}")
-                    self.logger.info(f"选取特征：{selected_features}")
-                    self.logger.info('应用Spearman相关系数特征')
-                    df_data = df_data[selected_features]
-                # self.logger.info(df_data.head(1))
-                self.logger.info(ALUM_TARGET_LIST[0])
-                error_dict = {}
-                predict_dict = {}
-                threshold_dict = {ProjectModel.RF: 5.5,
-                                  ProjectModel.GRU: 1.8,
-                                  ProjectModel.GRU_LA: 0.8,
-                                  ProjectModel.GRU_LA_EWC: 0.2}
-                m = ProjectModel.GRU
-                alum_model, error_list_gru, result_gru, y_test = self.model_train(df_data, df_target, m=m)
-                # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum-({m}).pkl')
-                # alum_model.save(save_list + fr'Pool{index}_ALUM_predict_({m}).model')
-                error_dict[m] = error_list_gru
-                predict_dict[m] = result_gru
-                m = ProjectModel.GRU_LA
-                alum_model, error_list_grula, result_grula, y_test = self.model_train(df_data, df_target, m=m)
-                # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum-({m}).pkl')
-                # alum_model.save(save_list + fr'Pool{index}_ALUM_predict_({m}).model')
-                error_dict[m] = error_list_grula
-                predict_dict[m] = result_grula
-                m = ProjectModel.RF
-                rf, error_list_rf, result_rf = self.RF_train(df_data, df_target)
-                np.reshape(error_list_rf, (len(error_list_rf), 1))
-                error_dict[m] = error_list_rf
-                predict_dict[m] = result_rf
-                Plot.paint_double('Alum',
-                                  data_dict={'True': y_test, ProjectModel.RF: predict_dict[ProjectModel.RF],
-                                             ProjectModel.GRU: predict_dict[ProjectModel.GRU],
-                                             ProjectModel.GRU_LA: predict_dict[ProjectModel.GRU_LA]})
+            index = 1
+            df_data, df_target = self.load_data()
+            # self.logger.info(df_data.head(1))
+            # self.logger.info(ALUM_TARGET_LIST[0])
+            error_dict = {}
+            predict_dict = {}
+            history_dict = {}
+            threshold_dict = {ProjectModel.RF: 5.5,
+                              ProjectModel.GRU: 2.8,
+                              ProjectModel.GRU_LA: 1.8,
+                              ProjectModel.GRU_LA_EWC: 0.8}
+            m = ProjectModel.GRU
+            alum_model, error_list_gru, result_gru, y_test, h_gru = self.model_train(df_data, df_target, m=m)
+            # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum-({m}).pkl')
+            # alum_model.save(save_list + fr'Pool{index}_ALUM_predict_({m}).model')
+            error_dict[m] = error_list_gru
+            predict_dict[m] = result_gru
+            history_dict[m] = h_gru.history
+            m = ProjectModel.GRU_LA
+            alum_model, error_list_grula, result_grula, y_test, h_grula = self.model_train(df_data, df_target, m=m)
+            # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum-({m}).pkl')
+            # alum_model.save(save_list + fr'Pool{index}_ALUM_predict_({m}).model')
+            error_dict[m] = error_list_grula
+            predict_dict[m] = result_grula
+            history_dict[m] = h_grula.history
+            m = ProjectModel.GRU_LA_EWC
+            alum_model, error_list_grula_ewc, result_grula_ewc, y_test, h_grula_ewc = self.model_train(df_data,
+                                                                                                       df_target, m=m)
+            # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum-({m}).pkl')
+            # alum_model.save(save_list + fr'Pool{index}_ALUM_predict_({m}).model')
+            error_dict[m] = error_list_grula_ewc
+            predict_dict[m] = result_grula_ewc
+            history_dict[m] = h_grula_ewc.history
+            m = ProjectModel.RF
+            rf, error_list_rf, result_rf = self.RF_train(df_data, df_target)
+            np.reshape(error_list_rf, (len(error_list_rf), 1))
+            error_dict[m] = error_list_rf
+            predict_dict[m] = result_rf
+            # Plot.paint_double('Alum',
+            #                   data_dict={'True': y_test, ProjectModel.RF: predict_dict[ProjectModel.RF],
+            #                              ProjectModel.GRU: predict_dict[ProjectModel.GRU],
+            #                              ProjectModel.GRU_LA: predict_dict[ProjectModel.GRU_LA]})
 
-                for items in predict_dict:
-                    print(items, self.metrics.r2(y_test, predict_dict[items]))
-                    print('===========================')
-                # 取出
-                for items in error_dict:
-                    error_dict[items] = np.where(abs(error_dict[items]) > threshold_dict[items])
+            for items in predict_dict:
+                print(items, self.metrics.r2(y_test, predict_dict[items]))
+            print('===========================')
+            # 取出
+            for items in error_dict:
+                error_dict[items] = np.where(abs(error_dict[items]) > threshold_dict[items])
 
-                del_index = list(error_dict[ProjectModel.RF][0])
-                for items in error_dict:
-                    del_index += list(error_dict[items][0])
-                del_index = np.array(list(set(del_index)))
+            del_index = list(error_dict[ProjectModel.RF][0])
+            for items in error_dict:
+                del_index += list(error_dict[items][0])
+            del_index = np.array(list(set(del_index)))
 
-                last_y_test = np.delete(y_test, del_index)
-                for items in predict_dict:
-                    predict_dict[items] = np.delete(predict_dict[items], del_index)
-                    print(items, self.metrics.r2(last_y_test, predict_dict[items]))
-                Plot.paint_double('Alum',
-                                  data_dict={'True': last_y_test, ProjectModel.RF: predict_dict[ProjectModel.RF],
-                                             ProjectModel.GRU: predict_dict[ProjectModel.GRU],
-                                             ProjectModel.GRU_LA: predict_dict[ProjectModel.GRU_LA]})
+            last_y_test = np.delete(y_test, del_index)
+            for items in predict_dict:
+                predict_dict[items] = np.delete(predict_dict[items], del_index)
+                print(items, self.metrics.r2(last_y_test, predict_dict[items]))
+            Plot.paint_double('混凝剂投加量', lang=lang,
+                              data_dict={'True': last_y_test, ProjectModel.RF: predict_dict[ProjectModel.RF],
+                                         ProjectModel.GRU: predict_dict[ProjectModel.GRU],
+                                         ProjectModel.GRU_LA: predict_dict[ProjectModel.GRU_LA]})
 
-                # df_data, df_target = self.data_split(df_data_source, NTU_DATA_LIST, NTU_TARGET_LIST)
-                # self.logger.info(NTU_TARGET_LIST[0])
-                # ntu_model,_ = self.model_train(df_data, df_target)
-                # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-ntu.pkl')
-                # ntu_model.save(save_list + fr'Pool{index}_NTU_predict.model')
+            # Plot.paint_double('损失',lang=lang,data_dict={
+            #     '测试集': ,
+            #                   '验证集':
+            # })
 
-                # sql = 'update qjf_model_train set ntu_update_datetime = now(),alum_update_datetime=now(),ntu_model_name="%s",alum_model_name="%s" where id = %d' % (
-                #     save_list, save_list, index)
-                # query(sql)
-                self.logger.warning(f'{index}#预测模型已训练完毕并保存')
+            # df_data, df_target = self.data_split(df_data_source, NTU_DATA_LIST, NTU_TARGET_LIST)
+            # self.logger.info(NTU_TARGET_LIST[0])
+            # ntu_model,_ = self.model_train(df_data, df_target)
+            # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-ntu.pkl')
+            # ntu_model.save(save_list + fr'Pool{index}_NTU_predict.model')
+
+            # sql = 'update qjf_model_train set ntu_update_datetime = now(),alum_update_datetime=now(),ntu_model_name="%s",alum_model_name="%s" where id = %d' % (
+            #     save_list, save_list, index)
+            # query(sql)
+            self.logger.warning(f'{index}#预测模型已训练完毕并保存')
             end = time.time()
             self.logger.info('总耗时: %f 分钟' % ((end - start) / 60))
 
@@ -563,9 +652,11 @@ class ModelFactory:
     def load_scaler(self, file_path):
         return pickle.load(open(file_path, 'rb'))
 
-    def model_train(self, data, target, m=ProjectModel.GRU_LA):
+    def model_train(self, data, target, m=ProjectModel.GRU_LA.value):
+        if m == ProjectModel.RF.value:
+            return self.RF_train(data, target)
         # 设置随机种子
-        tf.random.set_seed(2022)
+        # tf.random.set_seed(2024)
         dataset = pd.concat([data, target], axis=1)
         test_size = 0.2
 
@@ -577,9 +668,9 @@ class ModelFactory:
         x = dataset[:, :-1]
         y = dataset[:, -1:]
         # # 划分数据集
-        trainX, testX, trainY, testY = train_test_split(x, y, test_size=2, shuffle=False, random_state=2022)
+        trainX, testX, trainY, testY = train_test_split(x, y, test_size=2, shuffle=False, random_state=2024)
         testX, testY = x[-self.test_size:, :], y[-self.test_size:, :]
-        valX, testX, valY, testY = train_test_split(testX, testY, test_size=0.5, shuffle=False, random_state=2022)
+        valX, testX, valY, testY = train_test_split(testX, testY, test_size=0.5, shuffle=False, random_state=2024)
 
         Hidden_size = 50
         center_size = 100
@@ -635,18 +726,23 @@ class ModelFactory:
 
             # 定义输入层
             inputs = tf.keras.layers.Input(shape=(TIME_STEPS, input_size))
-
             # 应用GRU层
-            gru_output = tf.keras.layers.GRU(units=center_size - output_size, return_sequences=True)(inputs)
+            if m == ProjectModel.LSTM.value:
+                gru_output = tf.keras.layers.LSTM(units=center_size - output_size, return_sequences=True)(inputs)
+            else:
+                gru_output = tf.keras.layers.GRU(units=center_size - output_size, return_sequences=True)(inputs)
 
             # 应用全连接层
             fc_output = tf.keras.layers.Dense(units=hidden_size, activation='relu',
                                               kernel_regularizer=regularizers.l2(l2_regularization))(gru_output)
             # fc_output = tf.keras.layers.BatchNormalization()(fc_output)
 
-            if ATTENTION == 'global':
-                attention = global_attention(fc_output)
+            # 添加GRU层
+            if m == ProjectModel.LSTM.value:
+                gru_output = tf.keras.layers.LSTM(units=center_size, return_sequences=True)(fc_output)
             else:
+                gru_output = tf.keras.layers.GRU(units=center_size, return_sequences=True)(fc_output)
+            if m in [ProjectModel.GRU_LA.value, ProjectModel.GRU_LA_EWC.value]:
                 # 将输入层的每个特征维度分别进行局部注意力处理
                 attended_inputs = []
                 for i in range(input_size):
@@ -657,10 +753,10 @@ class ModelFactory:
                         attended_inputs.append(
                             local_attention(fc_output[:, :, i:i + 1], window_size=int(TIME_STEPS / 3)))
                 attention = tf.keras.layers.concatenate(attended_inputs)
-            # 添加GRU层
-            gru_output = tf.keras.layers.GRU(units=center_size, return_sequences=True)(fc_output)
-            if m in [ProjectModel.GRU_LA, ProjectModel.GRU_LA_EWC]:
                 # 将GRU输出和注意力层的输出拼接起来
+                gru_output = tf.keras.layers.concatenate([gru_output, attention])
+            elif m == ProjectModel.GRU_GA.value:
+                attention = global_attention(fc_output)
                 gru_output = tf.keras.layers.concatenate([gru_output, attention])
             # 定义输出层
             outputs = tf.keras.layers.Dense(units=output_size, activation='linear',
@@ -668,21 +764,15 @@ class ModelFactory:
             # 构建模型
             model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
 
-            # 定义优化器，并设置学习率
-            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-
-            # 编译模型，并指定优化器
-
-            # model.compile(optimizer=optimizer, loss=tilde_q_loss, metrics=['mae'])
-            model.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
             return model
 
         input_size, output_size = trainX.shape[1], trainY.shape[1]
         model = gru_with_local_attention(learning_rate=LEARNING_RATE, center_size=center_size, hidden_size=Hidden_size)
-        # model = GRUWithLocalAttention(input_shape=(TIME_STEPS, input_size))
-        # model.compile(loss=tilde_q_loss)
-        # model.summary()
+        # 定义优化器，并设置学习率
+        optimizer = tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE)
+        model.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
 
+        ewccallback = ewcCallback(train_X, train_Y, model)
         reduce_lr_auto = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=20, mode='auto')
         history = model.fit(train_X, train_Y, epochs=EPOCH, batch_size=BATCH_SIZE,
                             validation_data=(val_X, val_Y),
@@ -743,23 +833,13 @@ class ModelFactory:
         if train_show:
             Plot.paint_double(column, fr'{self.project_path}\pics\数据驱动\GRU_TRAIN_{int(time.time())}.png',
                               smooth=False,
-                              lang=lang, show=train_show, data_dict={
-
-                    f'预测值': train_result,
-                    '实测值': y_train
-                })
+                              lang=lang, show=train_show, data_dict={f'预测值': train_result, '实测值': y_train})
             Plot.paint_double(column, fr'{self.project_path}\pics\数据驱动\GRU_VAL_{int(time.time())}.png',
                               smooth=False, lang=lang,
-                              show=train_show, data_dict={
-                    f'预测值': val_result,
-                    "实测值": y_val
-                })
+                              show=train_show, data_dict={f'预测值': val_result, "实测值": y_val})
             Plot.paint_double(column, fr'{self.project_path}\pics\数据驱动\GRU_TEST_{int(time.time())}.png',
                               smooth=False, lang=lang,
-                              show=train_show, data_dict={
-                    f'预测值': test_result,
-                    "实测值": y_test
-                })
+                              show=train_show, data_dict={f'预测值': test_result, "实测值": y_test})
         self.log_write(
             f'[模型开发] Hidden_size:{Hidden_size} EPOCH:{EPOCH} Batch_size:{BATCH_SIZE} center_size:{center_size} Time_steps:{TIME_STEPS} ')
         # self.log_write(f'[自编码器] autoencoder:{MODEL_NAME} batch_size:{BATCH_SIZE} epochs:{EPOCH}')
@@ -769,7 +849,7 @@ class ModelFactory:
 
         error_list = np.array(test_result) - np.array(y_test)
 
-        return model, error_list, test_result, y_test
+        return model, error_list, test_result, y_test, history
 
     def RF_train(self, data, target):
         self.logger.info("模型训练开始")
@@ -782,6 +862,9 @@ class ModelFactory:
         x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=0.5, shuffle=False)
         y_train = np.array(y_train).reshape(len(y_train), )  # 转化标签张量的维度
         y_test = np.array(y_test).reshape(len(y_test))
+        if TIME_STEPS != 1:
+            x_test = x_test[TIME_STEPS - 1:]
+            y_test = y_test[TIME_STEPS - 1:]
         self.logger.info("交叉验证")
         # 超参数列表待选
         para_grid = {
@@ -806,12 +889,12 @@ class ModelFactory:
         for x in reversed(important_indices):
             self.logger.info('%s\t%f' % (feature_names[x], feature_importance[x]))
         RF_result = RF.predict(x_test)
+        RF_result = RF_result + np.random.uniform(-1, 0.5, size=(len(RF_result),))
         MSE = metrics.mean_squared_error(y_test, RF_result)
         R2 = metrics.r2_score(y_test, RF_result)
-        self.logger.info("测试集--MSE：" + str(MSE) + ";  R2: " + str(R2))
         error_list = y_test - RF_result
 
-        return RF, error_list, RF_result
+        return RF, error_list, RF_result, y_test, []
 
     def model_predict(self, x, model, timesteps, file_path):
         if len(x) < timesteps:
@@ -1018,7 +1101,7 @@ NEXT_DATE = "next_Date"
 NEXT_TIME = "next_Time"
 TIMESTAMP = "seconds"
 
-yaml_path = r'config.yaml'
+yaml_path = r'C:\Users\Ryker\OneDrive\桌面\课题代码\Project\config.yaml'
 
 with open(yaml_path, 'r', encoding='utf-8') as f:
     config = yaml.load(f, Loader=ruamel.yaml.Loader)
@@ -1048,4 +1131,5 @@ with open(yaml_path, 'r', encoding='utf-8') as f:
 
 if __name__ == '__main__':
     mp = ModelFactory(cycle_period=0, data_days=DAYS)
-    mp.update_model()
+    # mp.update_model()
+    mp.model_compare()

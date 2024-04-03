@@ -1,9 +1,11 @@
 import numpy as np
+import pandas as pd
 from sklearn import metrics  # 评价指标
 
+def r(data):
+    return round(data,2)
 
 class Metrics:
-
     R2 = 0
     MSE = 0
     RMSE = 0
@@ -16,19 +18,19 @@ class Metrics:
         计算每个数据点与目标值的绝对差值的平均值MAD
         """
         y_true, y_pred = np.array(y_true), np.array(y_pred)
-        return np.mean(np.abs(y_true - y_pred))
+        return r(np.mean(np.abs(y_true - y_pred)))
 
     def std(self, data):
         """
         计算标准差
         """
-        return np.std(data)
+        return r(np.std(data))
 
     def cv(self, data):
         """
         计算变异系数 CV (反映序列稳定性的指标，CV越小，序列稳定性越好)
         """
-        return np.std(data) / np.mean(data)
+        return r(np.std(data) / np.mean(data))
 
     def rmse(self, y_true, y_pred):
         """
@@ -38,7 +40,7 @@ class Metrics:
         :return: RMSE
         """
         y_true, y_pred = np.array(y_true), np.array(y_pred)
-        return np.sqrt(np.mean((y_true - y_pred) ** 2))
+        return r(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
     def absolute_percentage_error(self):
         """
@@ -51,7 +53,7 @@ class Metrics:
         计算决定系数R2（R-Squared）
         """
         r2 = metrics.r2_score(y_true, y_pred)
-        return r2
+        return r(r2)
 
     def mape(self, y_true, y_pred):
         """
@@ -61,4 +63,9 @@ class Metrics:
         :return: MAPE
         """
         y_true, y_pred = np.array(y_true), np.array(y_pred)
-        return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+        return r(np.mean(np.abs((y_true - y_pred) / y_true)) * 100)
+
+    def corr(self, y_test, data):
+        y_test = pd.Series(y_test)
+        data = pd.Series(data)
+        return r(y_test.corr(data))
