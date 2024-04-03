@@ -162,15 +162,24 @@ class ProjectModel(Enum):
 
 
 class ModelFactory:
+    project_path = ''
+
     def __init__(self, cycle_period=7, data_days=2):
-        self.project_path = 'C:\\Users\\Ryker\\OneDrive\\桌面\\课题代码\\Project'
-        # self.project_path = 'D:\\Python源码\\06_深度学习\\Project'
+        self.init_project_path()
         self.test_size = 1600
         self.data_size = 20000
         self.DATA_DAYS = data_days
         self.CYCLE_PERIOD = cycle_period
         self.init_logger()
         self.metrics = Metrics()
+
+    def init_project_path(self):
+        import os
+        path = os.environ.get('PATH')
+        if path.startswith(r'C:\Software'):
+            self.project_path = 'C:\\Users\\Ryker\\OneDrive\\桌面\\课题代码\\Project'
+        else:
+            self.project_path = 'D:\\Python源码\\06_深度学习\\Project'
 
     def init_logger(self):
         # 创建logger对象
@@ -1079,6 +1088,13 @@ class ModelFactory:
             next_time = df.loc[min_index, 'Date_S']
         return next_time
 
+    def test(self):
+
+# 准备平稳水源地水质数据和浊度徒生数据
+# 利用平稳水质数据训练一个GRU——LA模型
+# 分别利用直接拟合和ewc算法来拟合坏水质数据，得到两个模型
+# 比较两模型在平稳水质数据上的表现。
+
 
 def filter_df(df, win=10):
     for col in df.columns:
@@ -1132,4 +1148,5 @@ with open(yaml_path, 'r', encoding='utf-8') as f:
 if __name__ == '__main__':
     mp = ModelFactory(cycle_period=0, data_days=DAYS)
     # mp.update_model()
-    mp.model_compare()
+    # mp.model_compare()
+    mp.test()
