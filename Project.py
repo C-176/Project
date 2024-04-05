@@ -1,9 +1,7 @@
 import logging
 import os
-from enum import Enum
 from logging.handlers import TimedRotatingFileHandler
 
-import numpy as np
 import pandas as pd
 
 from Metrics import Metrics
@@ -16,6 +14,7 @@ class Project:
     csv_index_list = ['1号矾投加量', '1号沉淀池出水浊度']
     sql_index_list = ['cdcjfl1', 'cdczd1']
     index_dict = {0: '矾', 1: '出水浊度'}
+    logger = None
 
     month_dict = {
         1: ["01-01", "01-31"],
@@ -136,8 +135,66 @@ class Project:
              '超标数据量': [{'未应用专家系统': error_list1, '应用专家系统': error_list2}],
              '平均值': [{'未应用专家系统（出水浊度）': mean_list1[:12], '应用专家系统（出水浊度）': mean_list2[:12]},
                         {'未应用专家系统（矾量）': mean_list1[12:], '应用专家系统（矾量）': mean_list2[12:]}]
-             }, lang='zh'
-        )
+             }, lang='zh')
+
+    def GRU_LA_show(self, alum=True):
+        lang = 'zh'
+        df_data, df_target = self.model_factory.load_data(alum)
+        threshold_dict = {
+            True: 20,
+            False: 2
+        }
+        alum_model, error_list_grula, result_grula, y_test, h_grula = self.model_factory.model_train(df_data, df_target)
+        del_index = np.where(abs(error_list_grula) > threshold_dict[alum])
+        y_test = np.delete(y_test, del_index)
+        result_grula = np.delete(result_grula, del_index)
+
+        fig = plt.figure(figsize=(12, 9), dpi=100)  # 设置画布大小，像素
+        fig.subplots_adjust(top=0.85)
+        # ax1显示y1  ,ax2显示y2
+        ax11 = fig.add_subplot(211)
+        # ax11.set_ylim(10, 200)
+        ax11.tick_params(axis='x', labelsize=20)  # 设置字体大小为10
+        ax11.tick_params(axis='y', labelsize=20)  # 设置字体大小为10
+        ax11.set_ylabel('损失（TILDE-Q）', fontsize=20,
+                        fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        ax11.set_xlabel('回合', fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        ax11.plot(range(len(h_grula.history['loss'])), h_grula.history['loss'], color_list[:2][0] + '-',
+                  label='训练集')
+        ax11.plot(range(len(h_grula.history['val_loss'])), h_grula.history['val_loss'], color_list[:2][1] + '-',
+                  label='验证集')
+
+        # 获取图例对象
+        handles, labels = ax11.get_legend_handles_labels()
+        ax11.legend(handles, labels, loc='upper right',
+                    prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 16})
+
+        ax21 = fig.add_subplot(212)
+        # ax1.set_ylim(0, 2, 0.2)
+        # ax21.set_xlim(0, 13)
+        # ax21.set_xticks([])
+        ax21.tick_params(axis='x', labelsize=20)  # 设置字体大小为10
+        ax21.tick_params(axis='y', labelsize=20)  # 设置字体大小为10
+
+        # ax22 = ax21.twinx()  # 使用twinx()，得到与ax1 对称的ax2,共用一个x轴，y轴对称（坐标不对称）
+        if alum:
+            ax21.set_ylim(10, 20)
+        else:
+            ax21.set_ylim(1.4, 2.2)
+        # ax22.tick_params(axis='y', labelsize=20)
+        ax21.plot(range(len(y_test)), y_test, color_list[2:][0] + '-', label='实测值')
+        ax21.plot(range(len(result_grula)), result_grula, color_list[2:][1] + '-',
+                  label='预测值')
+        ax21.set_xlabel('样本', fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        ax21.set_ylabel('混凝剂用量（mg/L）' if alum else '出水浊度（NTU）', fontsize=20,
+                        fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
+        handles, labels = ax21.get_legend_handles_labels()
+
+        ax21.legend(handles, labels, loc='upper right',
+                    prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 16})
+        plt.savefig(f'pics/数据驱动/{"alum" if alum else "ntu"}_{int(time.time())}.png', dpi=300, bbox_inches='')
+        plt.show()
+        return y_test, result_grula
 
     def GRU_show(self):
         col_list = []
@@ -147,7 +204,7 @@ class Project:
         r_list = []
         r2_list = []
         for f in [True, False]:
-            y_test, data = self.model_factory.GRU_LA_show(f)
+            y_test, data = self.GRU_LA_show(f)
             col_list.append('混凝剂用量' if f else '出水浊度')
             std_list.append(self.metrics.std(data))
             rmse_list.append(self.metrics.rmse(y_test, data))
@@ -167,16 +224,9 @@ class Project:
         pd_data.to_csv(f'data/数据驱动/GRU_SHOW_{int(time.time())}.csv')
 
     def ano_detect(self):
-        sql = 'select alum_update_datetime from qjf_model_train where id = %d' % 1
-        result = query(sql)[0][0]
-        # 计算result和today_date的时间差
-        from_date, from_time = str(result).split(' ')[0], str(result).split(' ')[1]
-        from_date, from_time = get_datetime(from_date, from_time, -24 * self.model_factory.DATA_DAYS)
-        df_data_source = self.model_factory.get_data_from_sql(from_date)
-        # df_data_source = pd.read_csv(fr'{self.model_factory.project_path}\\data\\数据驱动\\{data_path}')
-        # df_data_source = df_data_source[30000:]
+        df_data_source = self.model_factory.load_data()[0]
         # 重构训练数据，设定阈值，整体重构，根据阈值剔除数据
-        df_data_source = self.model_factory.remake(df_data_source, df_data_source)
+        self.model_factory.remake(df_data_source, df_data_source)
 
     def taylor(self):
         data_path = 'data/数据驱动/compare_1711884112.csv'
@@ -187,7 +237,6 @@ class Project:
         df_data, df_target = self.model_factory.load_data()
         error_dict = {}
         predict_dict = {}
-        history_dict = {}
         threshold_dict = {ProjectModel.RF.value: 6.5,
                           ProjectModel.GRU.value: 1.5,
                           ProjectModel.LSTM.value: 2.8,
@@ -203,7 +252,6 @@ class Project:
             alum_model, error_list, result, y_test, h = self.model_factory.model_train(df_data, df_target, m=m)
             error_dict[m] = error_list
             predict_dict[m] = result
-
 
         for items in error_dict:
             error_dict[items] = np.where(abs(error_dict[items]) > threshold_dict[items])
@@ -240,13 +288,19 @@ class Project:
         }, index=col_list)
         self.logger.info(pd_data)
         pd_data.to_csv(f'data/数据驱动/compare_{int(time.time())}.csv', index_label='模型')
-        Plot.paint_double('混凝剂投加量', lang='zh', smooth=True,
+        Plot.paint_double('混凝剂投加量（mg/L）', lang='zh', smooth=True,
                           data_dict={'实际值': y_test, **predict_dict},
                           to_save=f'pics/数据驱动/compare_{int(time.time())}.png')
+
+    def ewc_test(self):
+        df_data, df_target = self.model_factory.load_data()
+        self.model_factory.model_train(df_data, df_target, ewc_test=True)
 
 
 if __name__ == '__main__':
     project = Project()
     # project.knowledge_compare()
     # project.GRU_show()
-    project.model_compare()
+    # project.model_compare()
+    # project.ano_detect()
+    project.ewc_test()

@@ -6,6 +6,7 @@ from enum import Enum
 from itertools import accumulate
 from logging.handlers import TimedRotatingFileHandler
 
+import matplotlib.pyplot as plt
 import ruamel
 from ruamel import yaml
 from scipy.interpolate import make_interp_spline
@@ -212,17 +213,66 @@ class ModelFactory:
         self.logger = logger
 
     def show_anomaly(self, X_train, scored, pause=False):
-        for i in X_train.columns:
+        from matplotlib.collections import PolyCollection
+        from mpl_toolkits.mplot3d import Axes3D
+        scaler = preprocessing.MinMaxScaler()
+        X_train = pd.DataFrame(scaler.fit_transform(X_train),
+                               columns=X_train.columns,
+                               index=X_train.index)
+        X_train = X_train[['syd_yszd_cj', 'syd_ph_cj', 'syd_sw_cj', 'cdczd1']]
+        label_list = ['水源地原水浊度', 'pH', '温度', '出水浊度']
+        fig = plt.figure(figsize=(10, 10), dpi=100)
+        ax = fig.add_subplot(111, projection='3d')
+        ax.set_box_aspect((2, 2, 1))  # 设置x, y, z轴的比例相同
+        ax.grid(False)
+        fig.tight_layout()  # 调整整体空白
+        plt.subplots_adjust(wspace=0, hspace=0)  # 调整子图间距
+        precipitation = []
+        for index, i in enumerate(X_train.columns):
             list1 = scored[scored[str(i) + '_Anomaly'] == True].index
             if detect_show:
-                Plot.paint_double(i,
-                                  to_save=fr'{self.project_path}\pics\数据驱动\异常数据_{i}_{int(time.time())}.png',
-                                  lang='zh',
-                                  sub_ax=[i - TIME_STEPS + 1 for i in list1],
-                                  show=detect_show, data_dict={
-                        '异常数据': [X_train[i][j] for j in list1],
-                        '原始数据': X_train[i]
-                    })
+                # Plot.paint_double(i,
+                #                   to_save=fr'{self.project_path}\pics\数据驱动\ano\{i}_{int(time.time())}.png',
+                #                   lang='zh',
+                #                   sub_ax=[i - TIME_STEPS + 1 for i in list1],
+                #                   show=detect_show, data_dict={
+                #         '异常数据': [X_train[i][j] for j in list1],
+                #         '原始数据': X_train[i]
+                #     })
+
+                value = np.array(X_train[i])
+                value = np.nan_to_num(value.astype(float), nan=0)
+
+                value[0], value[-1] = 0, 0
+                precipitation.append(list(zip(range(len(value)), value)))
+                x = [i - TIME_STEPS + 1 for i in list1]
+                y = [index + 1] * len(x)
+                z = [X_train[i][j] for j in list1]
+                ax.plot3D(x, y, z, 'k.', marker='o', markersize=2, markerfacecolor='white',
+                          label='异常值' if index == 0 else '')
+        poly = PolyCollection(precipitation, facecolors=['b', 'c', 'r', 'm', 'g', 'y'][-len(precipitation):])
+
+        poly.set_alpha(0.6)
+        # ax.view_init(10, -80)
+        ax.add_collection3d(poly, zs=range(1, len(X_train.columns) + 1), zdir='y')
+        ax.set_xlabel('样本', fontproperties='SimSun', fontsize=15, ha='right', va='center')
+        ax.set_xlim3d(0, len(X_train.iloc[:, 0]))
+        # ax.set_ylabel('特征', fontproperties='SimSun', fontsize=15)
+        # ax.set_ylim3d(0, len(X_train.columns) + 1)
+        # 设置y轴的刻度位置和标签
+        ax.set_xticks(range(0, len(X_train.iloc[:, 0]), 5000), fontproperties='Times New Roman',
+                      fontsize=15)
+        ax.set_yticks(range(len(X_train.columns) + 2), fontproperties='Times New Roman', fontsize=15)
+        ax.set_yticklabels(['', *label_list, ''], fontproperties='SimSun', fontsize=15, ha='left', va='center')
+
+        # 将字符串列表设置为y轴的刻度标签
+        # ax.set_yticklabels(X_train.columns, fontproperties='SimSun')
+
+        ax.set_zlabel('数值（归一化）', fontproperties='SimSun', fontsize=15, ha='right', va='center')
+        ax.set_zlim3d(0, 1)
+        plt.legend(prop={'family': 'SimSun', 'size': 16}, loc='center', bbox_to_anchor=(0.8, 0.9))
+        plt.savefig(f'pics/数据驱动/ano/ano_{int(time.time())}.png', dpi=300, bbox_inches='tight')
+        plt.show()
 
     def load_data(self, alum=True):
         today_date = datetime.now().strftime('%Y-%m-%d')
@@ -278,64 +328,6 @@ class ModelFactory:
 
         return df_data, df_target
 
-    def GRU_LA_show(self, alum=True):
-        df_data, df_target = self.load_data(alum)
-        threshold_dict = {
-            True: 20,
-            False: 2
-        }
-        alum_model, error_list_grula, result_grula, y_test, h_grula = self.model_train(df_data, df_target)
-        del_index = np.where(abs(error_list_grula) > threshold_dict[alum])
-        y_test = np.delete(y_test, del_index)
-        result_grula = np.delete(result_grula, del_index)
-
-        fig = plt.figure(figsize=(12, 9), dpi=100)  # 设置画布大小，像素
-        fig.subplots_adjust(top=0.85)
-        # ax1显示y1  ,ax2显示y2
-        ax11 = fig.add_subplot(211)
-        # ax11.set_ylim(10, 200)
-        ax11.tick_params(axis='x', labelsize=20)  # 设置字体大小为10
-        ax11.tick_params(axis='y', labelsize=20)  # 设置字体大小为10
-        ax11.set_ylabel('损失（TILDE-Q）', fontsize=20,
-                        fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
-        ax11.set_xlabel('回合', fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
-        ax11.plot(range(len(h_grula.history['loss'])), h_grula.history['loss'], color_list[:2][0] + '-',
-                  label='训练集')
-        ax11.plot(range(len(h_grula.history['val_loss'])), h_grula.history['val_loss'], color_list[:2][1] + '-',
-                  label='验证集')
-
-        # 获取图例对象
-        handles, labels = ax11.get_legend_handles_labels()
-        ax11.legend(handles, labels, loc='upper right',
-                    prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 16})
-
-        ax21 = fig.add_subplot(212)
-        # ax1.set_ylim(0, 2, 0.2)
-        # ax21.set_xlim(0, 13)
-        # ax21.set_xticks([])
-        ax21.tick_params(axis='x', labelsize=20)  # 设置字体大小为10
-        ax21.tick_params(axis='y', labelsize=20)  # 设置字体大小为10
-
-        # ax22 = ax21.twinx()  # 使用twinx()，得到与ax1 对称的ax2,共用一个x轴，y轴对称（坐标不对称）
-        if alum:
-            ax21.set_ylim(10, 20)
-        else:
-            ax21.set_ylim(1.4, 2.2)
-        # ax22.tick_params(axis='y', labelsize=20)
-        ax21.plot(range(len(y_test)), y_test, color_list[2:][0] + '-', label='实测值')
-        ax21.plot(range(len(result_grula)), result_grula, color_list[2:][1] + '-',
-                  label='预测值')
-        ax21.set_xlabel('样本', fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
-        ax21.set_ylabel('混凝剂用量（mg/L）' if alum else '出水浊度（NTU）', fontsize=20,
-                        fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')
-        handles, labels = ax21.get_legend_handles_labels()
-
-        ax21.legend(handles, labels, loc='upper right',
-                    prop={'family': 'Times New Roman' if lang == 'en' else 'SimSun', 'size': 16})
-        plt.savefig(f'pics/数据驱动/{"alum" if alum else "ntu"}_{int(time.time())}.png', dpi=300, bbox_inches='')
-        plt.show()
-        return y_test, result_grula
-
     def update_model(self):
         try:
             start = time.time()
@@ -343,70 +335,10 @@ class ModelFactory:
             df_data, df_target = self.load_data()
             # self.logger.info(df_data.head(1))
             # self.logger.info(ALUM_TARGET_LIST[0])
-            error_dict = {}
-            predict_dict = {}
-            history_dict = {}
-            threshold_dict = {ProjectModel.RF: 5.5,
-                              ProjectModel.GRU: 2.8,
-                              ProjectModel.GRU_LA: 1.8,
-                              ProjectModel.GRU_LA_EWC: 0.8}
-            m = ProjectModel.GRU
-            alum_model, error_list_gru, result_gru, y_test, h_gru = self.model_train(df_data, df_target, m=m)
+
+            self.model_train(df_data, df_target, ewc_test=True)
             # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum-({m}).pkl')
             # alum_model.save(save_list + fr'Pool{index}_ALUM_predict_({m}).model')
-            error_dict[m] = error_list_gru
-            predict_dict[m] = result_gru
-            history_dict[m] = h_gru.history
-            m = ProjectModel.GRU_LA
-            alum_model, error_list_grula, result_grula, y_test, h_grula = self.model_train(df_data, df_target, m=m)
-            # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum-({m}).pkl')
-            # alum_model.save(save_list + fr'Pool{index}_ALUM_predict_({m}).model')
-            error_dict[m] = error_list_grula
-            predict_dict[m] = result_grula
-            history_dict[m] = h_grula.history
-            m = ProjectModel.GRU_LA_EWC
-            alum_model, error_list_grula_ewc, result_grula_ewc, y_test, h_grula_ewc = self.model_train(df_data,
-                                                                                                       df_target, m=m)
-            # self.save_scaler_params(self.scaler, save_list + fr'{index}#scaler-alum-({m}).pkl')
-            # alum_model.save(save_list + fr'Pool{index}_ALUM_predict_({m}).model')
-            error_dict[m] = error_list_grula_ewc
-            predict_dict[m] = result_grula_ewc
-            history_dict[m] = h_grula_ewc.history
-            m = ProjectModel.RF
-            rf, error_list_rf, result_rf = self.RF_train(df_data, df_target)
-            np.reshape(error_list_rf, (len(error_list_rf), 1))
-            error_dict[m] = error_list_rf
-            predict_dict[m] = result_rf
-            # Plot.paint_double('Alum',
-            #                   data_dict={'True': y_test, ProjectModel.RF: predict_dict[ProjectModel.RF],
-            #                              ProjectModel.GRU: predict_dict[ProjectModel.GRU],
-            #                              ProjectModel.GRU_LA: predict_dict[ProjectModel.GRU_LA]})
-
-            for items in predict_dict:
-                print(items, self.metrics.r2(y_test, predict_dict[items]))
-            print('===========================')
-            # 取出
-            for items in error_dict:
-                error_dict[items] = np.where(abs(error_dict[items]) > threshold_dict[items])
-
-            del_index = list(error_dict[ProjectModel.RF][0])
-            for items in error_dict:
-                del_index += list(error_dict[items][0])
-            del_index = np.array(list(set(del_index)))
-
-            last_y_test = np.delete(y_test, del_index)
-            for items in predict_dict:
-                predict_dict[items] = np.delete(predict_dict[items], del_index)
-                print(items, self.metrics.r2(last_y_test, predict_dict[items]))
-            Plot.paint_double('混凝剂投加量', lang=lang,
-                              data_dict={'True': last_y_test, ProjectModel.RF: predict_dict[ProjectModel.RF],
-                                         ProjectModel.GRU: predict_dict[ProjectModel.GRU],
-                                         ProjectModel.GRU_LA: predict_dict[ProjectModel.GRU_LA]})
-
-            # Plot.paint_double('损失',lang=lang,data_dict={
-            #     '测试集': ,
-            #                   '验证集':
-            # })
 
             # df_data, df_target = self.data_split(df_data_source, NTU_DATA_LIST, NTU_TARGET_LIST)
             # self.logger.info(NTU_TARGET_LIST[0])
@@ -661,7 +593,7 @@ class ModelFactory:
     def load_scaler(self, file_path):
         return pickle.load(open(file_path, 'rb'))
 
-    def model_train(self, data, target, m=ProjectModel.GRU_LA.value):
+    def model_train(self, data, target, m=ProjectModel.GRU_LA.value, ewc_test=False):
         if m == ProjectModel.RF.value:
             return self.RF_train(data, target)
         # 设置随机种子
@@ -810,6 +742,42 @@ class ModelFactory:
         test_result = model.predict(test_X)
         train_result = model.predict(train_X)
         val_result = model.predict(val_X)
+        if ewc_test:
+            model.save('models/model.h5')  # 保存模型
+            model2, model2_ewc = load_model('models/model.h5'), load_model('models/model.h5')
+            model2.fit(val_X, val_Y, epochs=EPOCH, batch_size=BATCH_SIZE,
+                       validation_data=(val_X, val_Y),
+                       verbose=0,
+                       shuffle=True, workers=8, use_multiprocessing=True,
+                       callbacks=[reduce_lr_auto, ProgressBar(self.logger)])
+
+            model2_ewc.fit(train_X, train_Y, epochs=1, batch_size=BATCH_SIZE,
+                           validation_data=(val_X, val_Y),
+                           verbose=0,
+                           shuffle=True, workers=8, use_multiprocessing=True,
+                           callbacks=[reduce_lr_auto, ProgressBar(self.logger), ewccallback])
+
+            train_result2 = model2.predict(train_X)
+            train_result2_ewc = model2_ewc.predict(train_X)
+            result = sub_demension_label(train_result2, train_result2_ewc)
+            train_result2, train_result2_ewc = result[0], result[1]
+            train_result2 = inverse_transform(self.scaler, trainX, train_result2, -output_size, TIME_STEPS)
+            train_result2_ewc = inverse_transform(self.scaler, trainX, train_result2_ewc, -output_size, TIME_STEPS)
+            y_train = inverse_transform(self.scaler, trainX, trainY, -output_size, TIME_STEPS)
+            Plot.paint_double('混凝剂用量（mg/L）', show=True, lang='zh', data_dict={
+                '实际值': y_train,
+                'GRU_LA': train_result2,
+                'GRU_LA_EWC': train_result2_ewc
+            }, to_save=f'pics/数据驱动/ewc_{int(time.time())}.png')
+            r2_gru = self.metrics.r2(y_train, train_result2)
+            mape_gru = self.metrics.mape(y_train, train_result2)
+            rmse_gru = self.metrics.rmse(y_train, train_result2)
+            r2_gru_ewc = self.metrics.r2(y_train, train_result2_ewc)
+            mape_gru_ewc = self.metrics.mape(y_train, train_result2_ewc)
+            rmse_gru_ewc = self.metrics.rmse(y_train, train_result2_ewc)
+            self.logger.info(f'gru:r2 {r2_gru} rmse {rmse_gru} mape {mape_gru}')
+            self.logger.info(f'gru_ewc:r2 {r2_gru_ewc} rmse {rmse_gru_ewc} mape {mape_gru_ewc}')
+            return
 
         result = sub_demension_label(test_result, train_result, val_result)
         test_result, train_result, val_result = result[0], result[1], result[2]
@@ -1089,11 +1057,11 @@ class ModelFactory:
         return next_time
 
     def test(self):
-
-# 准备平稳水源地水质数据和浊度徒生数据
-# 利用平稳水质数据训练一个GRU——LA模型
-# 分别利用直接拟合和ewc算法来拟合坏水质数据，得到两个模型
-# 比较两模型在平稳水质数据上的表现。
+        pass
+        # 准备平稳水源地水质数据和浊度徒生数据
+        # 利用平稳水质数据训练一个GRU——LA模型
+        # 分别利用直接拟合和ewc算法来拟合坏水质数据，得到两个模型
+        # 比较两模型在平稳水质数据上的表现。
 
 
 def filter_df(df, win=10):
@@ -1147,6 +1115,5 @@ with open(yaml_path, 'r', encoding='utf-8') as f:
 
 if __name__ == '__main__':
     mp = ModelFactory(cycle_period=0, data_days=DAYS)
-    # mp.update_model()
-    # mp.model_compare()
-    mp.test()
+    mp.update_model()
+    # mp.test()

@@ -365,7 +365,7 @@ class Plot:
         plt.figure(figsize=(19, 10), dpi=100)  # 设置画布大小，像素
         plt.xticks(fontsize=20)
         plt.yticks(fontsize=20)
-        plt.ylim(10, 17.5)
+        plt.ylim(8, 40)
         plt.xlabel('Sample' if lang == 'en' else '样本', fontsize=20,
                    fontproperties='Times New Roman' if lang == 'en' else 'SimSun')
         plt.ylabel(column, fontsize=20, fontproperties='SimSun' if lang == 'zh' else 'Times New Roman')

@@ -5,7 +5,7 @@ ModelConfig:
   dataset: 'part'
   split: 0.2
   ano: 0
-  EPOCH: 100
+  EPOCH: 30
   BATCH_SIZE: 128
   LEARNING_RATE: 0.001
   TIME_STEPS: 6
